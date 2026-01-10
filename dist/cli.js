@@ -2210,30 +2210,60 @@ var init_src = __esm(async () => {
 import readline from "readline/promises";
 import { stdin as input, stdout as output } from "process";
 var REPO = "peytonmscott/droidforge";
-async function getLatestRef() {
-  const headers = {
+function buildGitHubHeaders() {
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  return {
     accept: "application/vnd.github+json",
-    "user-agent": "droidforge"
+    "user-agent": "droidforge",
+    ...token ? { authorization: `Bearer ${token}` } : {}
   };
-  const releaseResponse = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers });
-  if (releaseResponse.ok) {
-    const payload = await releaseResponse.json();
+}
+async function fetchJsonWithRetry(url, timeoutMs = 8000, retries = 2) {
+  let lastErr;
+  for (let attempt = 0;attempt <= retries; attempt++) {
+    const controller = new AbortController;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        headers: buildGitHubHeaders(),
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        const message = `GitHub API request failed: ${response.status} ${response.statusText}`;
+        throw Object.assign(new Error(message), { status: response.status });
+      }
+      return await response.json();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+        continue;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
+}
+async function getLatestRef() {
+  try {
+    const payload = await fetchJsonWithRetry(`https://api.github.com/repos/${REPO}/releases/latest`);
     const tag = String(payload?.tag_name ?? "").trim();
     if (!tag)
       throw new Error("Latest release response missing tag_name");
     return { ref: tag, source: "release" };
+  } catch (error) {
+    const status = Number(error?.status ?? 0);
+    if (status !== 404)
+      throw error;
   }
-  if (releaseResponse.status === 404) {
-    const tagsResponse = await fetch(`https://api.github.com/repos/${REPO}/tags?per_page=1`, { headers });
-    if (tagsResponse.ok) {
-      const tags = await tagsResponse.json();
-      const tag = String(tags?.[0]?.name ?? "").trim();
-      if (tag)
-        return { ref: tag, source: "tag" };
-    }
-    return { ref: "main", source: "default" };
-  }
-  throw new Error(`Failed to fetch latest release: ${releaseResponse.status} ${releaseResponse.statusText}`);
+  try {
+    const tags = await fetchJsonWithRetry(`https://api.github.com/repos/${REPO}/tags?per_page=1`);
+    const tag = String(tags?.[0]?.name ?? "").trim();
+    if (tag)
+      return { ref: tag, source: "tag" };
+  } catch {}
+  return { ref: "main", source: "default" };
 }
 async function confirmUpdate(command) {
   const rl = readline.createInterface({ input, output });
@@ -2288,7 +2318,12 @@ async function runUpdate(args) {
 }
 var [command, ...rest] = process.argv.slice(2);
 if (command === "update") {
-  await runUpdate(rest);
+  try {
+    await runUpdate(rest);
+  } catch (error) {
+    console.error("Update failed:", error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 } else {
   await init_src().then(() => exports_src);
 }
