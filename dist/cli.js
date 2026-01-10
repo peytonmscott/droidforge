@@ -1200,9 +1200,9 @@ var init_ActionsViewModel = __esm(() => {
       }
       return trimmed;
     }
-    parseGradleTasks(output) {
+    parseGradleTasks(output2) {
       const tasksByName = new Map;
-      for (const rawLine of output.split(`
+      for (const rawLine of output2.split(`
 `)) {
         const line = rawLine.trim();
         if (!line || line.startsWith(">"))
@@ -1911,10 +1911,10 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
     return Math.max(1, outputPanel.height - 2);
   }
   function updateOutput() {
-    const output = viewModel.output;
+    const output2 = viewModel.output;
     const visibleLineCount = getVisibleLineCount();
     viewModel.setOutputWindowSize(visibleLineCount);
-    const visibleLines = output.lines.slice(output.scrollOffset, output.scrollOffset + visibleLineCount);
+    const visibleLines = output2.lines.slice(output2.scrollOffset, output2.scrollOffset + visibleLineCount);
     outputText = Text9({
       id: "output-text",
       content: visibleLines.join(`
@@ -1932,8 +1932,8 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
       error: "\u274C"
     };
     const stateIcon = stateIcons[viewModel.state];
-    const exitInfo = output.exitCode !== null ? ` (exit: ${output.exitCode})` : "";
-    const scrollInfo = `[${output.scrollOffset + 1}-${Math.min(output.scrollOffset + visibleLineCount, output.lines.length)}/${output.lines.length}]`;
+    const exitInfo = output2.exitCode !== null ? ` (exit: ${output2.exitCode})` : "";
+    const scrollInfo = `[${output2.scrollOffset + 1}-${Math.min(output2.scrollOffset + visibleLineCount, output2.lines.length)}/${output2.lines.length}]`;
     const statusColor = viewModel.state === "error" ? TextAttributes4.BOLD : viewModel.state === "completed" ? TextAttributes4.NONE : TextAttributes4.DIM;
     statusBar = Text9({
       id: "status-bar",
@@ -2206,7 +2206,7 @@ var init_src = __esm(async () => {
   renderCurrentView();
 });
 
-// src/cli.ts
+// src/commands/update.ts
 import readline from "readline/promises";
 import { stdin as input, stdout as output } from "process";
 var REPO = "peytonmscott/droidforge";
@@ -2217,6 +2217,9 @@ function buildGitHubHeaders() {
     "user-agent": "droidforge",
     ...token ? { authorization: `Bearer ${token}` } : {}
   };
+}
+function isAbortError(error) {
+  return Boolean(error) && typeof error === "object" && error.name === "AbortError";
 }
 async function fetchJsonWithRetry(url, timeoutMs = 8000, retries = 2) {
   let lastErr;
@@ -2234,6 +2237,9 @@ async function fetchJsonWithRetry(url, timeoutMs = 8000, retries = 2) {
       }
       return await response.json();
     } catch (err) {
+      if (isAbortError(err)) {
+        throw new Error(`Request timed out after ${timeoutMs}ms`);
+      }
       lastErr = err;
       if (attempt < retries) {
         await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
@@ -2316,6 +2322,8 @@ async function runUpdate(args) {
   }
   console.log(`Updated to ${latest.ref}. Restart droidforge.`);
 }
+
+// src/cli.ts
 var [command, ...rest] = process.argv.slice(2);
 if (command === "update") {
   try {
