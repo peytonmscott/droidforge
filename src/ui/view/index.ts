@@ -5,4 +5,5 @@ export { ToolsView } from './ToolsView';
 export { SettingsView } from './SettingsView';
 export { AboutView } from './AboutView';
 export { ActionsView } from './ActionsView';
+export { GradleView } from './GradleView';
 export { ActionOutputView } from './ActionOutputView';

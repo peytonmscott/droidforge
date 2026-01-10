@@ -5,3 +5,4 @@ export { ToolsViewModel } from './ToolsViewModel';
 export { SettingsViewModel } from './SettingsViewModel';
 export { AboutViewModel } from './AboutViewModel';
 export { ActionsViewModel } from './ActionsViewModel';
+export { GradleViewModel } from './GradleViewModel';

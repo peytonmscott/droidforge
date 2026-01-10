@@ -52,7 +52,8 @@ export function setupDIModules() {
         ToolsViewModel,
         SettingsViewModel,
         AboutViewModel,
-        ActionsViewModel
+        ActionsViewModel,
+        GradleViewModel
     } = require('../viewmodels');
 
     // Database singleton
@@ -75,4 +76,5 @@ export function setupDIModules() {
     diContainer.factory('SettingsViewModel', () => new SettingsViewModel(diContainer.get('ThemeManager')));
     diContainer.factory('AboutViewModel', () => new AboutViewModel());
     diContainer.factory('ActionsViewModel', () => new ActionsViewModel());
+    diContainer.factory('GradleViewModel', () => new GradleViewModel());
 }

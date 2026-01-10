@@ -586,8 +586,8 @@ class MainMenuViewModel {
     },
     {
       name: "Gradle",
-      description: "Development utilities and code generators",
-      value: "tools"
+      description: "Browse and run Gradle tasks (all + curated)",
+      value: "gradle"
     },
     {
       name: "Settings",
@@ -898,8 +898,175 @@ class ProjectDetection {
 
 // src/viewmodels/ActionsViewModel.ts
 import fs4 from "fs";
-var SHOW_ALL_TASKS_VALUE = "__show-all-tasks__", SHOW_CURATED_TASKS_VALUE = "__show-curated-tasks__", RETRY_TASK_DISCOVERY_VALUE = "__retry-task-discovery__", NO_GRADLE_VALUE = "__no-gradle__", CURATED_TASKS, CURATED_TASK_LABELS, ActionsViewModel;
+
+class ActionsViewModel {
+  _menuMessage = null;
+  _onMenuUpdate = null;
+  _state = "idle";
+  _output = { lines: [], scrollOffset: 0, exitCode: null };
+  _outputWindowSize = 20;
+  _currentProcess = null;
+  _onOutputUpdate = null;
+  get state() {
+    return this._state;
+  }
+  get output() {
+    return this._output;
+  }
+  get inlineMessage() {
+    return this._menuMessage;
+  }
+  setMenuUpdateCallback(callback) {
+    this._onMenuUpdate = callback;
+    this._onMenuUpdate?.();
+  }
+  setOutputUpdateCallback(callback) {
+    this._onOutputUpdate = callback;
+  }
+  setOutputWindowSize(size) {
+    const clamped = Math.max(1, Math.floor(size));
+    if (this._outputWindowSize !== clamped) {
+      this._outputWindowSize = clamped;
+      this._onOutputUpdate?.();
+    }
+  }
+  handleMenuSelection(value) {
+    if (value === NO_GRADLE_VALUE || value.startsWith("__")) {
+      return { action: "none" };
+    }
+    return { action: "navigate", command: value };
+  }
+  getMenuOptions() {
+    if (!this.isGradleProject()) {
+      return [{
+        name: "No Gradle project detected",
+        description: "Launch Droid Forge inside an Android Gradle project",
+        value: NO_GRADLE_VALUE
+      }];
+    }
+    return CURATED_ACTIONS.map((action) => ({
+      name: action.label,
+      description: action.description,
+      value: action.command
+    }));
+  }
+  async runGradleCommand(command) {
+    this._state = "running";
+    this._output = { lines: [], scrollOffset: 0, exitCode: null };
+    this._onOutputUpdate?.();
+    const cwd = process.cwd();
+    const detection = new ProjectDetection().detectAndroidProject(cwd);
+    if (!detection.isAndroidProject || !fs4.existsSync("gradlew")) {
+      this._output.lines.push(`No Android Gradle project detected.
+` + "Launch Droid Forge from your project root, or pass a path: droidforge /path/to/android/project");
+      this._output.exitCode = 1;
+      this._state = "error";
+      this._currentProcess = null;
+      this._onOutputUpdate?.();
+      return;
+    }
+    try {
+      const proc = Bun.spawn(["./gradlew", command], {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe"
+      });
+      this._currentProcess = proc;
+      this.streamOutput(proc.stdout);
+      this.streamOutput(proc.stderr);
+      const exitCode = await proc.exited;
+      this._output.exitCode = exitCode;
+      this._state = exitCode === 0 ? "completed" : "error";
+      this._currentProcess = null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this._output.lines.push(`Error: ${message}`);
+      this._state = "error";
+      this._currentProcess = null;
+    }
+    this._onOutputUpdate?.();
+  }
+  cancelTask() {
+    if (this._currentProcess && this._state === "running") {
+      this._currentProcess.kill();
+      this._output.lines.push(`
+--- Task cancelled ---`);
+      this._state = "error";
+      this._currentProcess = null;
+      this._onOutputUpdate?.();
+      return true;
+    }
+    return false;
+  }
+  scrollUp(lines = 1) {
+    this._output.scrollOffset = Math.max(0, this._output.scrollOffset - lines);
+    this._onOutputUpdate?.();
+  }
+  scrollDown(lines = 1) {
+    const maxOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+    this._output.scrollOffset = Math.min(maxOffset, this._output.scrollOffset + lines);
+    this._onOutputUpdate?.();
+  }
+  getOutputText() {
+    return this._output.lines.join(`
+`);
+  }
+  reset() {
+    this._state = "idle";
+    this._output = { lines: [], scrollOffset: 0, exitCode: null };
+    this._currentProcess = null;
+  }
+  isGradleProject() {
+    const cwd = process.cwd();
+    const detection = new ProjectDetection().detectAndroidProject(cwd);
+    const hasGradleWrapper = fs4.existsSync("gradlew");
+    if (!detection.isAndroidProject || !hasGradleWrapper) {
+      this._menuMessage = `No Android Gradle project detected. Launch Droid Forge from your project root,
+` + "or pass a path: droidforge /path/to/android/project";
+      return false;
+    }
+    this._menuMessage = null;
+    return true;
+  }
+  async streamOutput(stream) {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder;
+    let pending = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done)
+        break;
+      pending += decoder.decode(value, { stream: true });
+      const parts = pending.split(`
+`);
+      pending = parts.pop();
+      for (const line of parts) {
+        if (line.trim()) {
+          this._output.lines.push(line);
+        }
+      }
+      this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+      this._onOutputUpdate?.();
+    }
+    if (pending.trim()) {
+      this._output.lines.push(pending);
+      this._onOutputUpdate?.();
+    }
+  }
+}
+var NO_GRADLE_VALUE = "__no-gradle__", CURATED_ACTIONS;
 var init_ActionsViewModel = __esm(() => {
+  CURATED_ACTIONS = [
+    { label: "Test", description: "Runs unit tests", command: "test" },
+    { label: "Clean", description: "Cleans build outputs", command: "clean" },
+    { label: "Build", description: "Builds the project", command: "build" }
+  ];
+});
+
+// src/viewmodels/GradleViewModel.ts
+import fs5 from "fs";
+var SHOW_ALL_TASKS_VALUE = "__show-all-tasks__", SHOW_CURATED_TASKS_VALUE = "__show-curated-tasks__", RETRY_TASK_DISCOVERY_VALUE = "__retry-task-discovery__", NO_GRADLE_VALUE2 = "__no-gradle__", CURATED_TASKS, CURATED_TASK_LABELS, GradleViewModel;
+var init_GradleViewModel = __esm(() => {
   CURATED_TASKS = [
     "assembleDebug",
     "installDebug",
@@ -922,7 +1089,7 @@ var init_ActionsViewModel = __esm(() => {
     clean: { label: "Clean", fallbackDescription: "Cleans build outputs" },
     assembleRelease: { label: "Assemble Release", fallbackDescription: "Builds the release APK/AAB" }
   };
-  ActionsViewModel = class ActionsViewModel {
+  GradleViewModel = class GradleViewModel {
     static taskCache = new Map;
     _menuState = "loading";
     _menuMessage = null;
@@ -930,22 +1097,8 @@ var init_ActionsViewModel = __esm(() => {
     _showAllTasks = false;
     _tasksLoadPromise = null;
     _onMenuUpdate = null;
-    _state = "idle";
-    _output = { lines: [], scrollOffset: 0, exitCode: null };
-    _outputWindowSize = 20;
-    _currentProcess = null;
-    _onOutputUpdate = null;
     constructor() {
       this.loadGradleTasks();
-    }
-    get state() {
-      return this._state;
-    }
-    get output() {
-      return this._output;
-    }
-    get menuState() {
-      return this._menuState;
     }
     get inlineMessage() {
       return this._menuMessage;
@@ -953,16 +1106,6 @@ var init_ActionsViewModel = __esm(() => {
     setMenuUpdateCallback(callback) {
       this._onMenuUpdate = callback;
       this._onMenuUpdate?.();
-    }
-    setOutputUpdateCallback(callback) {
-      this._onOutputUpdate = callback;
-    }
-    setOutputWindowSize(size) {
-      const clamped = Math.max(1, Math.floor(size));
-      if (this._outputWindowSize !== clamped) {
-        this._outputWindowSize = clamped;
-        this._onOutputUpdate?.();
-      }
     }
     handleMenuSelection(value) {
       switch (value) {
@@ -978,7 +1121,7 @@ var init_ActionsViewModel = __esm(() => {
           this._tasksLoadPromise = null;
           this.loadGradleTasks();
           return { action: "none" };
-        case NO_GRADLE_VALUE:
+        case NO_GRADLE_VALUE2:
           return { action: "none" };
         default:
           if (value.startsWith("__")) {
@@ -999,7 +1142,7 @@ var init_ActionsViewModel = __esm(() => {
           return [{
             name: "No Gradle project detected",
             description: "Launch Droid Forge inside an Android Gradle project",
-            value: NO_GRADLE_VALUE
+            value: NO_GRADLE_VALUE2
           }];
         case "error":
           return [{
@@ -1030,7 +1173,7 @@ var init_ActionsViewModel = __esm(() => {
         this._menuMessage = null;
         this.notifyMenuUpdate();
         const cwd = process.cwd();
-        const cachedTasks = ActionsViewModel.taskCache.get(cwd);
+        const cachedTasks = GradleViewModel.taskCache.get(cwd);
         if (cachedTasks) {
           this._tasks = cachedTasks;
           this._menuState = "ready";
@@ -1039,11 +1182,11 @@ var init_ActionsViewModel = __esm(() => {
           return;
         }
         const detection = new ProjectDetection().detectAndroidProject(cwd);
-        const hasGradleWrapper = fs4.existsSync("gradlew");
+        const hasGradleWrapper = fs5.existsSync("gradlew");
         if (!detection.isAndroidProject || !hasGradleWrapper) {
           this._menuState = "not-gradle";
           this._menuMessage = `No Android Gradle project detected. Launch Droid Forge from your project root,
-` + "or pass a path: bun dev /path/to/android/project";
+` + "or pass a path: droidforge /path/to/android/project";
           this._tasks = [];
           this.notifyMenuUpdate();
           return;
@@ -1066,78 +1209,12 @@ var init_ActionsViewModel = __esm(() => {
         }
         const tasks = this.parseGradleTasks(stdout);
         this._tasks = tasks;
-        ActionsViewModel.taskCache.set(cwd, tasks);
+        GradleViewModel.taskCache.set(cwd, tasks);
         this._menuState = "ready";
         this._menuMessage = null;
         this.notifyMenuUpdate();
       })();
       return this._tasksLoadPromise;
-    }
-    async runGradleCommand(command) {
-      this._state = "running";
-      this._output = { lines: [], scrollOffset: 0, exitCode: null };
-      this._onOutputUpdate?.();
-      const cwd = process.cwd();
-      const detection = new ProjectDetection().detectAndroidProject(cwd);
-      if (!detection.isAndroidProject || !fs4.existsSync("gradlew")) {
-        this._output.lines.push(`No Android Gradle project detected.
-` + "Launch Droid Forge from your project root, or pass a path: bun dev /path/to/android/project");
-        this._output.exitCode = 1;
-        this._state = "error";
-        this._currentProcess = null;
-        this._onOutputUpdate?.();
-        return;
-      }
-      try {
-        const proc = Bun.spawn(["./gradlew", command], {
-          cwd,
-          stdout: "pipe",
-          stderr: "pipe"
-        });
-        this._currentProcess = proc;
-        this.streamOutput(proc.stdout);
-        this.streamOutput(proc.stderr);
-        const exitCode = await proc.exited;
-        this._output.exitCode = exitCode;
-        this._state = exitCode === 0 ? "completed" : "error";
-        this._currentProcess = null;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        this._output.lines.push(`Error: ${message}`);
-        this._state = "error";
-        this._currentProcess = null;
-      }
-      this._onOutputUpdate?.();
-    }
-    cancelTask() {
-      if (this._currentProcess && this._state === "running") {
-        this._currentProcess.kill();
-        this._output.lines.push(`
---- Task cancelled ---`);
-        this._state = "error";
-        this._currentProcess = null;
-        this._onOutputUpdate?.();
-        return true;
-      }
-      return false;
-    }
-    scrollUp(lines = 1) {
-      this._output.scrollOffset = Math.max(0, this._output.scrollOffset - lines);
-      this._onOutputUpdate?.();
-    }
-    scrollDown(lines = 1) {
-      const maxOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
-      this._output.scrollOffset = Math.min(maxOffset, this._output.scrollOffset + lines);
-      this._onOutputUpdate?.();
-    }
-    getOutputText() {
-      return this._output.lines.join(`
-`);
-    }
-    reset() {
-      this._state = "idle";
-      this._output = { lines: [], scrollOffset: 0, exitCode: null };
-      this._currentProcess = null;
     }
     notifyMenuUpdate() {
       this._onMenuUpdate?.();
@@ -1222,31 +1299,6 @@ var init_ActionsViewModel = __esm(() => {
       }
       return [...tasksByName.values()];
     }
-    async streamOutput(stream) {
-      const reader = stream.getReader();
-      const decoder = new TextDecoder;
-      let pending = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done)
-          break;
-        pending += decoder.decode(value, { stream: true });
-        const parts = pending.split(`
-`);
-        pending = parts.pop();
-        for (const line of parts) {
-          if (line.trim()) {
-            this._output.lines.push(line);
-          }
-        }
-        this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
-        this._onOutputUpdate?.();
-      }
-      if (pending.trim()) {
-        this._output.lines.push(pending);
-        this._onOutputUpdate?.();
-      }
-    }
   };
 });
 
@@ -1257,12 +1309,14 @@ __export(exports_viewmodels, {
   SettingsViewModel: () => SettingsViewModel,
   ProjectsViewModel: () => ProjectsViewModel,
   MainMenuViewModel: () => MainMenuViewModel,
+  GradleViewModel: () => GradleViewModel,
   DashboardViewModel: () => DashboardViewModel,
   ActionsViewModel: () => ActionsViewModel,
   AboutViewModel: () => AboutViewModel
 });
 var init_viewmodels = __esm(() => {
   init_ActionsViewModel();
+  init_GradleViewModel();
 });
 
 // src/di/container.ts
@@ -1300,7 +1354,8 @@ function setupDIModules() {
     ToolsViewModel: ToolsViewModel2,
     SettingsViewModel: SettingsViewModel2,
     AboutViewModel: AboutViewModel2,
-    ActionsViewModel: ActionsViewModel2
+    ActionsViewModel: ActionsViewModel2,
+    GradleViewModel: GradleViewModel2
   } = (init_viewmodels(), __toCommonJS(exports_viewmodels));
   diContainer.single("Database", () => new Database2);
   diContainer.single("ProjectRepository", () => new ProjectRepository2(diContainer.get("Database")));
@@ -1312,6 +1367,7 @@ function setupDIModules() {
   diContainer.factory("SettingsViewModel", () => new SettingsViewModel2(diContainer.get("ThemeManager")));
   diContainer.factory("AboutViewModel", () => new AboutViewModel2);
   diContainer.factory("ActionsViewModel", () => new ActionsViewModel2);
+  diContainer.factory("GradleViewModel", () => new GradleViewModel2);
 }
 var diContainer;
 var init_container = __esm(() => {
@@ -1376,16 +1432,16 @@ class NavigationManager {
 var init_navigation = () => {};
 
 // src/utilities/androidProjectName.ts
-import fs5 from "fs";
+import fs6 from "fs";
 import path5 from "path";
 function getAndroidProjectName(projectRoot) {
   const settingsCandidates = ["settings.gradle.kts", "settings.gradle"];
   for (const settingsFile of settingsCandidates) {
     const filePath = path5.join(projectRoot, settingsFile);
-    if (!fs5.existsSync(filePath))
+    if (!fs6.existsSync(filePath))
       continue;
     try {
-      const content = fs5.readFileSync(filePath, "utf8");
+      const content = fs6.readFileSync(filePath, "utf8");
       const match = content.match(/rootProject\.name\s*=\s*['"]([^'"]+)['"]/);
       if (match?.[1]) {
         const name = match[1].trim();
@@ -1818,7 +1874,7 @@ function ActionsView(renderer, viewModel, onNavigate) {
     justifyContent: "flex-start",
     width: 108
   });
-  headerSection.add(Header(renderer, "\uD83D\uDC18 Gradle - Test, Build, Run and Deploy!"));
+  headerSection.add(Header(renderer, "Actions"));
   container.add(headerSection);
   const menuPanel = new BoxRenderable10(renderer, {
     id: "menu-panel",
@@ -1875,15 +1931,87 @@ var init_ActionsView = __esm(() => {
   init_components();
 });
 
-// src/ui/view/ActionOutputView.ts
+// src/ui/view/GradleView.ts
 import { BoxRenderable as BoxRenderable11, Text as Text9, TextAttributes as TextAttributes4 } from "@opentui/core";
-function ActionOutputView(renderer, viewModel, command, onBack) {
+function GradleView(renderer, viewModel, onNavigate) {
   const container = new BoxRenderable11(renderer, {
+    id: "gradle-container",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "column",
+    flexGrow: 1
+  });
+  const headerSection = new BoxRenderable11(renderer, {
+    alignItems: "flex-start",
+    justifyContent: "flex-start",
+    width: 108
+  });
+  headerSection.add(Header(renderer, "Gradle Tasks"));
+  container.add(headerSection);
+  const menuPanel = new BoxRenderable11(renderer, {
+    id: "gradle-menu-panel",
+    width: 100,
+    height: 20,
+    border: true,
+    borderStyle: "single",
+    borderColor: "#475569",
+    title: "Gradle",
+    titleAlignment: "center",
+    margin: 2
+  });
+  const selectMenu = SelectMenu(renderer, {
+    id: "gradle-select",
+    options: viewModel.getMenuOptions(),
+    height: 18,
+    autoFocus: true,
+    onSelect: (_index, option) => {
+      const value = typeof option.value === "string" ? option.value : "";
+      const result = viewModel.handleMenuSelection(value);
+      if (result.action === "navigate" && onNavigate) {
+        onNavigate(`actionoutputview:${result.command}`);
+      }
+    }
+  });
+  function updateInlineMessage() {
+    const message = viewModel.inlineMessage;
+    headerSection.remove("gradle-message");
+    if (!message)
+      return;
+    headerSection.add(Text9({
+      id: "gradle-message",
+      content: message,
+      attributes: TextAttributes4.DIM,
+      margin: 1
+    }));
+  }
+  function refreshMenu() {
+    selectMenu.options = viewModel.getMenuOptions();
+    updateInlineMessage();
+  }
+  viewModel.setMenuUpdateCallback(refreshMenu);
+  const menuSection = new BoxRenderable11(renderer, {
+    alignItems: "center",
+    justifyContent: "center"
+  });
+  menuPanel.add(selectMenu);
+  menuSection.add(menuPanel);
+  container.add(menuSection);
+  refreshMenu();
+  return container;
+}
+var init_GradleView = __esm(() => {
+  init_components();
+});
+
+// src/ui/view/ActionOutputView.ts
+import { BoxRenderable as BoxRenderable12, Text as Text10, TextAttributes as TextAttributes5 } from "@opentui/core";
+function ActionOutputView(renderer, viewModel, command, onBack) {
+  const container = new BoxRenderable12(renderer, {
     id: "action-output-container",
     flexDirection: "column",
     flexGrow: 1
   });
-  const outputPanel = new BoxRenderable11(renderer, {
+  const outputPanel = new BoxRenderable12(renderer, {
     id: "output-panel",
     flexGrow: 1,
     border: true,
@@ -1896,15 +2024,15 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
       viewModel.setOutputWindowSize(Math.max(1, this.height - 2));
     }
   });
-  let outputText = Text9({
+  let outputText = Text10({
     id: "output-text",
     content: "",
-    attributes: TextAttributes4.NONE,
+    attributes: TextAttributes5.NONE,
     flexGrow: 1,
     wrapMode: "char"
   });
   outputPanel.add(outputText);
-  let statusBar = Text9({ id: "status-bar", content: "", attributes: TextAttributes4.DIM });
+  let statusBar = Text10({ id: "status-bar", content: "", attributes: TextAttributes5.DIM });
   container.add(outputPanel);
   container.add(statusBar);
   function getVisibleLineCount() {
@@ -1915,11 +2043,11 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
     const visibleLineCount = getVisibleLineCount();
     viewModel.setOutputWindowSize(visibleLineCount);
     const visibleLines = output2.lines.slice(output2.scrollOffset, output2.scrollOffset + visibleLineCount);
-    outputText = Text9({
+    outputText = Text10({
       id: "output-text",
       content: visibleLines.join(`
 `),
-      attributes: TextAttributes4.NONE,
+      attributes: TextAttributes5.NONE,
       flexGrow: 1,
       wrapMode: "char"
     });
@@ -1934,8 +2062,8 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
     const stateIcon = stateIcons[viewModel.state];
     const exitInfo = output2.exitCode !== null ? ` (exit: ${output2.exitCode})` : "";
     const scrollInfo = `[${output2.scrollOffset + 1}-${Math.min(output2.scrollOffset + visibleLineCount, output2.lines.length)}/${output2.lines.length}]`;
-    const statusColor = viewModel.state === "error" ? TextAttributes4.BOLD : viewModel.state === "completed" ? TextAttributes4.NONE : TextAttributes4.DIM;
-    statusBar = Text9({
+    const statusColor = viewModel.state === "error" ? TextAttributes5.BOLD : viewModel.state === "completed" ? TextAttributes5.NONE : TextAttributes5.DIM;
+    statusBar = Text10({
       id: "status-bar",
       content: `${stateIcon} ${viewModel.state}${exitInfo} ${scrollInfo}`,
       attributes: statusColor
@@ -1965,10 +2093,10 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
             Bun.spawn(["pbcopy"], {
               stdin: new Response(text).body
             });
-            statusBar = Text9({
+            statusBar = Text10({
               id: "status-bar",
               content: "\uD83D\uDCCB Copied to clipboard!",
-              attributes: TextAttributes4.NONE
+              attributes: TextAttributes5.NONE
             });
             container.remove("status-bar");
             container.add(statusBar);
@@ -2002,6 +2130,7 @@ var init_view = __esm(() => {
   init_SettingsView();
   init_AboutView();
   init_ActionsView();
+  init_GradleView();
   init_ActionOutputView();
 });
 
@@ -2099,6 +2228,20 @@ function renderCurrentView() {
         }
       }, (select) => {
         currentSelectElement = select;
+      });
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "gradle": {
+      const viewModel = diContainer.get("GradleViewModel");
+      const view = GradleView(renderer, viewModel, (action) => {
+        if (action === "back") {
+          navigation.navigateTo("menu");
+        } else {
+          navigation.navigateTo(action);
+        }
+        renderCurrentView();
       });
       renderer.root.add(view);
       currentViewElements.push(view);

@@ -1,14 +1,14 @@
 import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
-import { ActionsViewModel } from '../../viewmodels';
+import { GradleViewModel } from '../../viewmodels';
 import { Header, SelectMenu } from '../components';
 
-export function ActionsView(
+export function GradleView(
     renderer: any,
-    viewModel: ActionsViewModel,
+    viewModel: GradleViewModel,
     onNavigate?: (action: string) => void
 ): BoxRenderable {
     const container = new BoxRenderable(renderer, {
-        id: "actions-container",
+        id: "gradle-container",
         alignItems: "center",
         justifyContent: "center",
         flexDirection: "column",
@@ -21,23 +21,23 @@ export function ActionsView(
         width: 108,
     });
 
-    headerSection.add(Header(renderer, "Actions"));
+    headerSection.add(Header(renderer, "Gradle Tasks"));
     container.add(headerSection);
 
     const menuPanel = new BoxRenderable(renderer, {
-        id: "menu-panel",
+        id: "gradle-menu-panel",
         width: 100,
         height: 20,
         border: true,
         borderStyle: "single",
         borderColor: "#475569",
-        title: "Actions",
+        title: "Gradle",
         titleAlignment: "center",
         margin: 2,
     });
 
     const selectMenu = SelectMenu(renderer, {
-        id: "actions-select",
+        id: "gradle-select",
         options: viewModel.getMenuOptions(),
         height: 18,
         autoFocus: true,
@@ -54,12 +54,12 @@ export function ActionsView(
     function updateInlineMessage(): void {
         const message = viewModel.inlineMessage;
 
-        headerSection.remove('actions-message');
+        headerSection.remove('gradle-message');
 
         if (!message) return;
 
         headerSection.add(Text({
-            id: 'actions-message',
+            id: 'gradle-message',
             content: message,
             attributes: TextAttributes.DIM,
             margin: 1,
