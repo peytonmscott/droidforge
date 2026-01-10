@@ -231,7 +231,7 @@ class Database {
         if (!hasPath) {
           this.db.run("ALTER TABLE projects ADD COLUMN path TEXT");
         }
-        this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path)");
+        this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path) WHERE path IS NOT NULL");
       });
     });
     this.db.run(`
@@ -2001,17 +2001,21 @@ function renderCurrentView() {
         if (action.startsWith("open-project-")) {
           const id = action.slice("open-project-".length);
           (async () => {
-            const projectRepo = diContainer.get("ProjectRepository");
-            const project = await projectRepo.getProjectById(id);
-            if (!project?.path)
-              return;
-            process.chdir(project.path);
-            await projectRepo.saveProject({
-              ...project,
-              updatedAt: new Date
-            });
-            navigation.navigateTo("actions");
-            renderCurrentView();
+            try {
+              const projectRepo = diContainer.get("ProjectRepository");
+              const project = await projectRepo.getProjectById(id);
+              if (!project?.path)
+                return;
+              process.chdir(project.path);
+              await projectRepo.saveProject({
+                ...project,
+                updatedAt: new Date
+              });
+              navigation.navigateTo("actions");
+              renderCurrentView();
+            } catch (error) {
+              console.error("Failed to open project:", error);
+            }
           })();
           return;
         }
