@@ -216,12 +216,24 @@ class Database {
             CREATE TABLE IF NOT EXISTS projects (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
+                path TEXT,
                 status TEXT NOT NULL,
                 description TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `);
+    this.db.serialize(() => {
+      this.db.all("PRAGMA table_info(projects)", (err, rows) => {
+        if (err)
+          return;
+        const hasPath = Array.isArray(rows) && rows.some((row) => row?.name === "path");
+        if (!hasPath) {
+          this.db.run("ALTER TABLE projects ADD COLUMN path TEXT");
+        }
+        this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path)");
+      });
+    });
     this.db.run(`
             CREATE TABLE IF NOT EXISTS settings (
                 id INTEGER PRIMARY KEY DEFAULT 1,
@@ -247,6 +259,27 @@ class ProjectRepository {
   constructor(db) {
     this.db = db;
   }
+  async getProjectByPath(projectPath) {
+    return new Promise((resolve, reject) => {
+      this.db.getDb().get("SELECT * FROM projects WHERE path = ?", [projectPath], (err, row) => {
+        if (err)
+          reject(err);
+        else if (row) {
+          resolve({
+            id: row.id,
+            name: row.name,
+            path: row.path ?? "",
+            status: row.status,
+            description: row.description,
+            createdAt: new Date(row.created_at),
+            updatedAt: new Date(row.updated_at)
+          });
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  }
   async getAllProjects() {
     return new Promise((resolve, reject) => {
       this.db.getDb().all("SELECT * FROM projects ORDER BY updated_at DESC", (err, rows) => {
@@ -256,11 +289,12 @@ class ProjectRepository {
           resolve(rows.map((row) => ({
             id: row.id,
             name: row.name,
+            path: row.path ?? "",
             status: row.status,
             description: row.description,
             createdAt: new Date(row.created_at),
             updatedAt: new Date(row.updated_at)
-          })));
+          })).filter((project) => project.path.length > 0));
       });
     });
   }
@@ -273,6 +307,7 @@ class ProjectRepository {
           resolve({
             id: row.id,
             name: row.name,
+            path: row.path ?? "",
             status: row.status,
             description: row.description,
             createdAt: new Date(row.created_at),
@@ -287,12 +322,13 @@ class ProjectRepository {
   async saveProject(project) {
     return new Promise((resolve, reject) => {
       const sql = `
-                INSERT OR REPLACE INTO projects (id, name, status, description, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO projects (id, name, path, status, description, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             `;
       const params = [
         project.id,
         project.name,
+        project.path,
         project.status,
         project.description || null,
         project.createdAt.toISOString(),
@@ -513,39 +549,103 @@ class DashboardViewModel {
 class ProjectsViewModel {
   projectRepo;
   projects = [];
+  mode = "normal";
+  removalTarget = null;
+  lastSelectedIndex = 0;
+  onMenuUpdate = null;
   constructor(projectRepo) {
     this.projectRepo = projectRepo;
-    this.loadProjects();
+    this.refresh();
   }
-  async loadProjects() {
+  setMenuUpdateCallback(callback) {
+    this.onMenuUpdate = callback;
+    this.onMenuUpdate?.();
+  }
+  notifyMenuUpdate() {
+    this.onMenuUpdate?.();
+  }
+  isConfirmingRemoval() {
+    return this.mode === "confirm-remove" && this.removalTarget !== null;
+  }
+  getRemovalTarget() {
+    return this.removalTarget;
+  }
+  async refresh() {
     try {
       this.projects = await this.projectRepo.getAllProjects();
     } catch {
       this.projects = [];
     }
+    this.notifyMenuUpdate();
+  }
+  async requestRemoveProjectById(projectId, selectedIndex) {
+    const target = this.projects.find((project) => project.id === projectId) ?? null;
+    if (!target)
+      return;
+    this.lastSelectedIndex = selectedIndex;
+    this.mode = "confirm-remove";
+    this.removalTarget = target;
+    this.notifyMenuUpdate();
+  }
+  async confirmRemove() {
+    if (!this.removalTarget)
+      return;
+    await this.projectRepo.deleteProject(this.removalTarget.id);
+    this.mode = "normal";
+    this.removalTarget = null;
+    await this.refresh();
+  }
+  cancelRemove() {
+    this.mode = "normal";
+    this.removalTarget = null;
+    this.notifyMenuUpdate();
+  }
+  getInitialSelectedIndex() {
+    return this.isConfirmingRemoval() ? 0 : this.lastSelectedIndex;
+  }
+  getFooterText() {
+    if (this.isConfirmingRemoval()) {
+      const name = this.removalTarget?.name ?? "this project";
+      return `Remove "${name}"? ENTER/Y: Confirm | N/ESC: Cancel`;
+    }
+    return "ESC: Back to Menu | \u2191\u2193: Navigate | ENTER: Open | R: Remove";
   }
   getProjects() {
     if (this.projects.length === 0) {
       return [
         {
           name: "No projects yet",
-          description: "Create one to get started",
+          description: "Run Droidforge inside an Android project to add it",
           value: "noop"
         }
       ];
     }
     return this.projects.map((project) => ({
       name: project.name,
-      description: `Status: ${project.status}`,
+      description: project.path,
       value: `open-project-${project.id}`
     }));
   }
   getAllMenuOptions() {
-    return [
-      ...this.getProjects()
-    ];
+    if (this.isConfirmingRemoval()) {
+      const name = this.removalTarget?.name ?? "this project";
+      const id = this.removalTarget?.id ?? "";
+      return [
+        {
+          name: `Remove: ${name}`,
+          description: "Permanently remove from the list",
+          value: `confirm-remove:${id}`
+        },
+        {
+          name: "Cancel",
+          description: "Keep it in the list",
+          value: "cancel-remove"
+        }
+      ];
+    }
+    return [...this.getProjects()];
   }
-  onMenuItemSelected(index, option) {
+  onMenuItemSelected(_index, option) {
     return option.value;
   }
 }
@@ -626,18 +726,26 @@ class AboutViewModel {
 
 // src/utilities/projectDetection.ts
 class ProjectDetection {
-  isAndroidProject(dir) {
-    const currentDir = dir;
-    return currentDir;
+  findAndroidProjectRoot(startDir) {
+    const fs4 = __require("fs");
+    const path5 = __require("path");
+    let currentDir = path5.resolve(startDir || process.cwd());
+    while (true) {
+      const hasSettings = fs4.existsSync(path5.join(currentDir, "settings.gradle")) || fs4.existsSync(path5.join(currentDir, "settings.gradle.kts"));
+      if (hasSettings)
+        return currentDir;
+      const parentDir = path5.dirname(currentDir);
+      if (parentDir === currentDir)
+        return null;
+      currentDir = parentDir;
+    }
   }
   detectAndroidProject(dir) {
     const fs4 = __require("fs");
     const path5 = __require("path");
-    const currentDir = dir || process.cwd();
-    const settingsFiles = ["settings.gradle", "settings.gradle.kts"];
-    const hasSettings = settingsFiles.some((f) => fs4.existsSync(path5.join(currentDir, f)));
-    if (!hasSettings) {
-      return { isAndroidProject: false, confidence: "high" };
+    const projectRoot = this.findAndroidProjectRoot(dir || process.cwd());
+    if (!projectRoot) {
+      return { isAndroidProject: false, confidence: "high", projectRoot: null };
     }
     const androidPlugins = [
       "com.android.application",
@@ -653,7 +761,7 @@ class ProjectDetection {
     const versionCatalog = "gradle/libs.versions.toml";
     let foundAndroidPlugin = false;
     let projectType = "unknown";
-    const tomlPath = path5.join(currentDir, versionCatalog);
+    const tomlPath = path5.join(projectRoot, versionCatalog);
     if (fs4.existsSync(tomlPath)) {
       const content = fs4.readFileSync(tomlPath, "utf8");
       for (const plugin of androidPlugins) {
@@ -666,7 +774,7 @@ class ProjectDetection {
     }
     if (!foundAndroidPlugin) {
       for (const file of buildFiles) {
-        const filePath = path5.join(currentDir, file);
+        const filePath = path5.join(projectRoot, file);
         if (!fs4.existsSync(filePath))
           continue;
         const content = fs4.readFileSync(filePath, "utf8");
@@ -697,9 +805,10 @@ class ProjectDetection {
       }
     }
     return {
-      isAndroidProject: foundAndroidPlugin || hasSettings,
+      isAndroidProject: foundAndroidPlugin || Boolean(projectRoot),
       projectType,
-      confidence: foundAndroidPlugin ? "high" : hasSettings ? "medium" : "low"
+      confidence: foundAndroidPlugin ? "high" : projectRoot ? "medium" : "low",
+      projectRoot
     };
   }
 }
@@ -1075,6 +1184,7 @@ var init_viewmodels = __esm(() => {
 
 // src/index.ts
 import { createCliRenderer } from "@opentui/core";
+import path7 from "path";
 
 // src/bootstrap.ts
 init_config();
@@ -1193,7 +1303,7 @@ function setupDIModules() {
   diContainer.single("ThemeManager", () => new ThemeManager2);
   diContainer.factory("MainMenuViewModel", () => new MainMenuViewModel2);
   diContainer.factory("DashboardViewModel", () => new DashboardViewModel2);
-  diContainer.factory("ProjectsViewModel", () => new ProjectsViewModel2(diContainer.get("ProjectRepository")));
+  diContainer.single("ProjectsViewModel", () => new ProjectsViewModel2(diContainer.get("ProjectRepository")));
   diContainer.factory("ToolsViewModel", () => new ToolsViewModel2);
   diContainer.factory("SettingsViewModel", () => new SettingsViewModel2(diContainer.get("ThemeManager")));
   diContainer.factory("AboutViewModel", () => new AboutViewModel2);
@@ -1247,6 +1357,37 @@ class NavigationManager {
   canGoBack() {
     return this.viewStack.length > 1;
   }
+}
+// src/utilities/androidProjectName.ts
+import fs5 from "fs";
+import path5 from "path";
+function getAndroidProjectName(projectRoot) {
+  const settingsCandidates = ["settings.gradle.kts", "settings.gradle"];
+  for (const settingsFile of settingsCandidates) {
+    const filePath = path5.join(projectRoot, settingsFile);
+    if (!fs5.existsSync(filePath))
+      continue;
+    try {
+      const content = fs5.readFileSync(filePath, "utf8");
+      const match = content.match(/rootProject\.name\s*=\s*['"]([^'"]+)['"]/);
+      if (match?.[1]) {
+        const name = match[1].trim();
+        if (name.length > 0)
+          return name;
+      }
+    } catch {}
+  }
+  return path5.basename(projectRoot);
+}
+// src/utilities/projectMemory.ts
+import crypto from "crypto";
+import path6 from "path";
+function normalizeProjectPath(projectPath) {
+  return path6.resolve(projectPath);
+}
+function projectIdFromPath(projectPath) {
+  const normalized = normalizeProjectPath(projectPath);
+  return crypto.createHash("sha1").update(normalized).digest("hex");
 }
 // src/ui/view/MainMenuView.ts
 import { BoxRenderable as BoxRenderable4 } from "@opentui/core";
@@ -1326,6 +1467,7 @@ function SelectMenu(renderer, props) {
     id: props.id,
     height: props.height || 12,
     options: props.options,
+    selectedIndex: props.selectedIndex ?? 0,
     backgroundColor: "transparent",
     focusedBackgroundColor: "transparent",
     selectedBackgroundColor: "#1E3A5F",
@@ -1425,7 +1567,7 @@ function DashboardView(renderer, viewModel) {
 }
 // src/ui/view/ProjectsView.ts
 import { BoxRenderable as BoxRenderable6 } from "@opentui/core";
-function ProjectsView(renderer, viewModel, onNavigate) {
+function ProjectsView(renderer, viewModel, onNavigate, onSelectCreated) {
   const projectsContainer = new BoxRenderable6(renderer, {
     id: "projects-container",
     alignItems: "center",
@@ -1446,24 +1588,32 @@ function ProjectsView(renderer, viewModel, onNavigate) {
     titleAlignment: "center",
     margin: 2
   });
-  const menuOptions = viewModel.getAllMenuOptions();
   const selectMenu = SelectMenu(renderer, {
     id: "projects-select",
-    options: menuOptions,
+    options: viewModel.getAllMenuOptions(),
     height: 18,
     autoFocus: true,
+    selectedIndex: viewModel.getInitialSelectedIndex(),
     onSelect: (index, option) => {
-      if (option.value === "separator")
-        return;
       const action = viewModel.onMenuItemSelected(index, option);
       if (onNavigate) {
         onNavigate(action);
       }
     }
   });
+  onSelectCreated?.(selectMenu);
+  function refreshMenu() {
+    selectMenu.options = viewModel.getAllMenuOptions();
+    selectMenu.setSelectedIndex(viewModel.getInitialSelectedIndex());
+    projectsContainer.remove("footer-box");
+    const footer2 = Footer(renderer, viewModel.getFooterText());
+    projectsContainer.add(footer2);
+    selectMenu.focus();
+  }
+  viewModel.setMenuUpdateCallback(refreshMenu);
   selectContainer.add(selectMenu);
   projectsContainer.add(selectContainer);
-  const footer = Footer(renderer, "ESC: Back to Menu | \u2191\u2193: Navigate | ENTER: Select");
+  const footer = Footer(renderer, viewModel.getFooterText());
   projectsContainer.add(footer);
   return projectsContainer;
 }
@@ -1772,14 +1922,39 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
   return container;
 }
 // src/index.ts
-await bootstrap();
-setupDIModules();
 var targetDir = process.argv[2];
 if (targetDir) {
-  const path5 = __require("path");
-  const resolvedPath = path5.resolve(targetDir);
+  const resolvedPath = path7.resolve(targetDir);
   process.chdir(resolvedPath);
 }
+var projectDetection = new ProjectDetection;
+var detectedRoot = projectDetection.findAndroidProjectRoot(process.cwd());
+if (detectedRoot) {
+  process.chdir(detectedRoot);
+}
+await bootstrap();
+setupDIModules();
+async function rememberCurrentAndroidProject() {
+  const detection = projectDetection.detectAndroidProject(process.cwd());
+  if (!detection.isAndroidProject || !detection.projectRoot)
+    return;
+  const root = normalizeProjectPath(detection.projectRoot);
+  const projectRepo = diContainer.get("ProjectRepository");
+  const projectId = projectIdFromPath(root);
+  const now = new Date;
+  const existing = await projectRepo.getProjectById(projectId);
+  const createdAt = existing?.createdAt ?? now;
+  await projectRepo.saveProject({
+    id: projectId,
+    name: getAndroidProjectName(root),
+    path: root,
+    status: "active",
+    description: existing?.description,
+    createdAt,
+    updatedAt: now
+  });
+}
+await rememberCurrentAndroidProject();
 var renderer = await createCliRenderer({ exitOnCtrlC: true });
 var navigation = new NavigationManager;
 var currentViewElements = [];
@@ -1821,13 +1996,35 @@ function renderCurrentView() {
     case "projects": {
       const viewModel = diContainer.get("ProjectsViewModel");
       const view = ProjectsView(renderer, viewModel, (action) => {
+        if (action === "noop")
+          return;
         if (action.startsWith("open-project-")) {
-          console.log(`Opening project: ${action}`);
-        } else {
-          console.log(`Action: ${action}`);
+          const id = action.slice("open-project-".length);
+          (async () => {
+            const projectRepo = diContainer.get("ProjectRepository");
+            const project = await projectRepo.getProjectById(id);
+            if (!project?.path)
+              return;
+            process.chdir(project.path);
+            await projectRepo.saveProject({
+              ...project,
+              updatedAt: new Date
+            });
+            navigation.navigateTo("actions");
+            renderCurrentView();
+          })();
+          return;
         }
-        navigation.navigateTo("menu");
-        renderCurrentView();
+        if (action.startsWith("confirm-remove:")) {
+          viewModel.confirmRemove();
+          return;
+        }
+        if (action === "cancel-remove") {
+          viewModel.cancelRemove();
+          return;
+        }
+      }, (select) => {
+        currentSelectElement = select;
       });
       renderer.root.add(view);
       currentViewElements.push(view);
@@ -1871,10 +2068,42 @@ function renderCurrentView() {
   }
 }
 renderer.keyInput.on("keypress", (key) => {
+  const currentView = navigation.getCurrentView();
   if (key.name === "escape") {
-    if (navigation.getCurrentView() !== "menu") {
+    if (currentView === "projects") {
+      const projectsViewModel = diContainer.get("ProjectsViewModel");
+      if (projectsViewModel.isConfirmingRemoval()) {
+        projectsViewModel.cancelRemove();
+        return;
+      }
+    }
+    if (currentView !== "menu") {
       navigation.navigateTo("menu");
       renderCurrentView();
+    }
+    return;
+  }
+  if (currentView === "projects") {
+    const projectsViewModel = diContainer.get("ProjectsViewModel");
+    const keyName = (key.name || "").toLowerCase();
+    if (projectsViewModel.isConfirmingRemoval()) {
+      if (keyName === "y") {
+        projectsViewModel.confirmRemove();
+      }
+      if (keyName === "n") {
+        projectsViewModel.cancelRemove();
+      }
+      return;
+    }
+    if (keyName === "r") {
+      const select = currentSelectElement;
+      const selectedOption = select?.getSelectedOption?.();
+      const selectedValue = typeof selectedOption?.value === "string" ? selectedOption.value : "";
+      if (selectedValue.startsWith("open-project-")) {
+        const id = selectedValue.slice("open-project-".length);
+        const selectedIndex = select?.getSelectedIndex?.() ?? 0;
+        projectsViewModel.requestRemoveProjectById(id, selectedIndex);
+      }
     }
   }
 });

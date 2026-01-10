@@ -5,6 +5,7 @@ export interface SelectMenuProps {
     id: string;
     height?: number;
     options: MenuOption[];
+    selectedIndex?: number;
     onSelect?: (index: number, option: MenuOption) => void;
     autoFocus?: boolean;
 }
@@ -14,6 +15,7 @@ export function SelectMenu(renderer: any, props: SelectMenuProps): SelectRendera
         id: props.id,
         height: props.height || 12,
         options: props.options,
+        selectedIndex: props.selectedIndex ?? 0,
         backgroundColor: "transparent",
         focusedBackgroundColor: "transparent",
         selectedBackgroundColor: "#1E3A5F",

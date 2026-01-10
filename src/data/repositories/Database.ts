@@ -50,12 +50,27 @@ export class Database {
             CREATE TABLE IF NOT EXISTS projects (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
+                path TEXT,
                 status TEXT NOT NULL,
                 description TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `);
+
+        // Migrate older DBs that don't have `path`
+        this.db.serialize(() => {
+            this.db.all('PRAGMA table_info(projects)', (err, rows: any[]) => {
+                if (err) return;
+
+                const hasPath = Array.isArray(rows) && rows.some((row: any) => row?.name === 'path');
+                if (!hasPath) {
+                    this.db.run('ALTER TABLE projects ADD COLUMN path TEXT');
+                }
+
+                this.db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path)');
+            });
+        });
 
         // Settings table (single row)
         this.db.run(`

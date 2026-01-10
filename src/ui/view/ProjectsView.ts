@@ -5,7 +5,8 @@ import { Header, Footer, SelectMenu } from '../components';
 export function ProjectsView(
     renderer: any,
     viewModel: ProjectsViewModel,
-    onNavigate?: (action: string) => void
+    onNavigate?: (action: string) => void,
+    onSelectCreated?: (select: any) => void
 ): BoxRenderable {
     // Create projects container
     const projectsContainer = new BoxRenderable(renderer, {
@@ -34,14 +35,13 @@ export function ProjectsView(
     });
 
     // Create select menu with all options
-    const menuOptions = viewModel.getAllMenuOptions();
     const selectMenu = SelectMenu(renderer, {
         id: "projects-select",
-        options: menuOptions,
+        options: viewModel.getAllMenuOptions(),
         height: 18,
         autoFocus: true,
+        selectedIndex: viewModel.getInitialSelectedIndex(),
         onSelect: (index, option) => {
-            if (option.value === "separator") return; // Skip separator
             const action = viewModel.onMenuItemSelected(index, option);
             if (onNavigate) {
                 onNavigate(action);
@@ -49,11 +49,26 @@ export function ProjectsView(
         }
     });
 
+    onSelectCreated?.(selectMenu);
+
+    function refreshMenu(): void {
+        selectMenu.options = viewModel.getAllMenuOptions();
+        selectMenu.setSelectedIndex(viewModel.getInitialSelectedIndex());
+
+        projectsContainer.remove('footer-box');
+        const footer = Footer(renderer, viewModel.getFooterText());
+        projectsContainer.add(footer);
+
+        selectMenu.focus();
+    }
+
+    viewModel.setMenuUpdateCallback(refreshMenu);
+
     selectContainer.add(selectMenu);
     projectsContainer.add(selectContainer);
 
     // Footer
-    const footer = Footer(renderer, "ESC: Back to Menu | ↑↓: Navigate | ENTER: Select");
+    const footer = Footer(renderer, viewModel.getFooterText());
     projectsContainer.add(footer);
 
     return projectsContainer;

@@ -1,7 +1,10 @@
 import { createCliRenderer, type KeyEvent } from "@opentui/core";
+import path from 'path';
+
 import { bootstrap } from './bootstrap';
 import { setupDIModules, diContainer } from './di';
-import { NavigationManager, clearCurrentView } from './utilities';
+import { NavigationManager, clearCurrentView, getAndroidProjectName, normalizeProjectPath, projectIdFromPath } from './utilities';
+import { ProjectDetection } from './utilities/projectDetection';
 import {
     MainMenuView,
     DashboardView,
@@ -13,17 +16,49 @@ import {
     ActionOutputView
 } from './ui/view';
 
+const targetDir = process.argv[2];
+if (targetDir) {
+    const resolvedPath = path.resolve(targetDir);
+    process.chdir(resolvedPath);
+}
+
+// Walk up to Android project root if needed
+const projectDetection = new ProjectDetection();
+const detectedRoot = projectDetection.findAndroidProjectRoot(process.cwd());
+if (detectedRoot) {
+    process.chdir(detectedRoot);
+}
+
 await bootstrap();
 
 // Initialize DI
 setupDIModules();
 
-const targetDir = process.argv[2];
-if (targetDir) {
-    const path = require('path');
-    const resolvedPath = path.resolve(targetDir);
-    process.chdir(resolvedPath);
+async function rememberCurrentAndroidProject(): Promise<void> {
+    const detection = projectDetection.detectAndroidProject(process.cwd());
+    if (!detection.isAndroidProject || !detection.projectRoot) return;
+
+    const root = normalizeProjectPath(detection.projectRoot);
+    const projectRepo = diContainer.get('ProjectRepository') as any;
+
+    const projectId = projectIdFromPath(root);
+    const now = new Date();
+
+    const existing = await projectRepo.getProjectById(projectId);
+    const createdAt = existing?.createdAt ?? now;
+
+    await projectRepo.saveProject({
+        id: projectId,
+        name: getAndroidProjectName(root),
+        path: root,
+        status: 'active',
+        description: existing?.description,
+        createdAt,
+        updatedAt: now,
+    });
 }
+
+await rememberCurrentAndroidProject();
 
 // Get dependencies
 const renderer = await createCliRenderer({ exitOnCtrlC: true });
@@ -73,17 +108,40 @@ function renderCurrentView() {
         case "projects": {
             const viewModel = diContainer.get('ProjectsViewModel') as any;
             const view = ProjectsView(renderer, viewModel, (action) => {
-                // Handle project-specific actions here
+                if (action === 'noop') return;
+
                 if (action.startsWith('open-project-')) {
-                    // Handle opening a specific project
-                    console.log(`Opening project: ${action}`);
-                } else {
-                    // Handle other actions like create, template, etc.
-                    console.log(`Action: ${action}`);
+                    const id = action.slice('open-project-'.length);
+                    void (async () => {
+                        const projectRepo = diContainer.get('ProjectRepository') as any;
+                        const project = await projectRepo.getProjectById(id);
+                        if (!project?.path) return;
+
+                        process.chdir(project.path);
+
+                        // Touch updated time
+                        await projectRepo.saveProject({
+                            ...project,
+                            updatedAt: new Date(),
+                        });
+
+                        navigation.navigateTo('actions');
+                        renderCurrentView();
+                    })();
+                    return;
                 }
-                // For now, just navigate back to menu on any selection
-                navigation.navigateTo('menu');
-                renderCurrentView();
+
+                if (action.startsWith('confirm-remove:')) {
+                    void viewModel.confirmRemove();
+                    return;
+                }
+
+                if (action === 'cancel-remove') {
+                    viewModel.cancelRemove();
+                    return;
+                }
+            }, (select) => {
+                currentSelectElement = select;
             });
             renderer.root.add(view);
             currentViewElements.push(view);
@@ -129,10 +187,48 @@ function renderCurrentView() {
 
 // Handle keyboard navigation
 renderer.keyInput.on("keypress", (key: KeyEvent) => {
-    if (key.name === "escape") {
-        if (navigation.getCurrentView() !== "menu") {
-            navigation.navigateTo("menu");
+    const currentView = navigation.getCurrentView();
+
+    if (key.name === 'escape') {
+        if (currentView === 'projects') {
+            const projectsViewModel = diContainer.get('ProjectsViewModel') as any;
+            if (projectsViewModel.isConfirmingRemoval()) {
+                projectsViewModel.cancelRemove();
+                return;
+            }
+        }
+
+        if (currentView !== 'menu') {
+            navigation.navigateTo('menu');
             renderCurrentView();
+        }
+        return;
+    }
+
+    if (currentView === 'projects') {
+        const projectsViewModel = diContainer.get('ProjectsViewModel') as any;
+        const keyName = (key.name || '').toLowerCase();
+
+        if (projectsViewModel.isConfirmingRemoval()) {
+            if (keyName === 'y') {
+                void projectsViewModel.confirmRemove();
+            }
+            if (keyName === 'n') {
+                projectsViewModel.cancelRemove();
+            }
+            return;
+        }
+
+        if (keyName === 'r') {
+            const select = currentSelectElement;
+            const selectedOption = select?.getSelectedOption?.();
+            const selectedValue = typeof selectedOption?.value === 'string' ? selectedOption.value : '';
+
+            if (selectedValue.startsWith('open-project-')) {
+                const id = selectedValue.slice('open-project-'.length);
+                const selectedIndex = select?.getSelectedIndex?.() ?? 0;
+                void projectsViewModel.requestRemoveProjectById(id, selectedIndex);
+            }
         }
     }
 });
