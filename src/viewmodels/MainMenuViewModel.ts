@@ -14,8 +14,8 @@ export class MainMenuViewModel {
         },
         {
             name: "Gradle",
-            description: "Development utilities and code generators",
-            value: "tools"
+            description: "Browse and run Gradle tasks (all + curated)",
+            value: "gradle"
         },
         {
             name: "Settings",

@@ -13,6 +13,7 @@ import {
     SettingsView,
     AboutView,
     ActionsView,
+    GradleView,
     ActionOutputView
 } from './ui/view';
 
@@ -146,6 +147,20 @@ function renderCurrentView() {
                 }
             }, (select) => {
                 currentSelectElement = select;
+            });
+            renderer.root.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "gradle": {
+            const viewModel = diContainer.get('GradleViewModel') as any;
+            const view = GradleView(renderer, viewModel, (action) => {
+                if (action === 'back') {
+                    navigation.navigateTo('menu');
+                } else {
+                    navigation.navigateTo(action);
+                }
+                renderCurrentView();
             });
             renderer.root.add(view);
             currentViewElements.push(view);
