@@ -1,4 +1,5 @@
 import { createCliRenderer, type KeyEvent } from "@opentui/core";
+import { bootstrap } from './bootstrap';
 import { setupDIModules, diContainer } from './di';
 import { NavigationManager, clearCurrentView } from './utilities';
 import {
@@ -11,6 +12,8 @@ import {
     ActionsView,
     ActionOutputView
 } from './ui/view';
+
+await bootstrap();
 
 // Initialize DI
 setupDIModules();

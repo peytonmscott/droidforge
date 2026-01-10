@@ -1,15 +1,16 @@
 import sqlite3 from 'sqlite3';
+import fs from 'fs';
 import path from 'path';
-import os from 'os';
+
+import { getDbPath, getLegacyDbPath } from '../../utilities/paths';
 
 export class Database {
     private db: sqlite3.Database;
 
-    constructor() {
-        const dbPath = path.join(os.homedir(), '.droidforge', 'data.db');
-        
+    constructor(dbPath: string = getDbPath()) {
+        this.migrateLegacyDbIfNeeded(dbPath);
+
         // Ensure directory exists
-        const fs = require('fs');
         const dir = path.dirname(dbPath);
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
@@ -17,6 +18,30 @@ export class Database {
 
         this.db = new sqlite3.Database(dbPath);
         this.initializeTables();
+    }
+
+    private migrateLegacyDbIfNeeded(dbPath: string): void {
+        const legacyPath = getLegacyDbPath();
+
+        if (legacyPath === dbPath) return;
+        if (!fs.existsSync(legacyPath)) return;
+        if (fs.existsSync(dbPath)) return;
+
+        const dir = path.dirname(dbPath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+
+        try {
+            fs.renameSync(legacyPath, dbPath);
+        } catch {
+            fs.copyFileSync(legacyPath, dbPath);
+            try {
+                fs.unlinkSync(legacyPath);
+            } catch {
+                // ignore
+            }
+        }
     }
 
     private initializeTables(): void {

@@ -1,10 +1,14 @@
 {
   "name": "droidforge",
-  "module": "src/index.tsx",
   "type": "module",
   "private": true,
+  "bin": {
+    "droidforge": "dist/cli.js"
+  },
   "scripts": {
-    "dev": "bun run --watch src/index.ts"
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/cli.ts --outfile dist/cli.js --target node --format esm --packages external --banner '#!/usr/bin/env node\\n'",
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "latest"

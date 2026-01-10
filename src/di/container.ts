@@ -43,7 +43,7 @@ export const diContainer = new DIContainer();
 // Module definitions (like Koin modules)
 export function setupDIModules() {
     // Import here to avoid circular deps
-    const { Database, ProjectRepository, SettingsRepository } = require('../data/repositories');
+    const { Database, ProjectRepository } = require('../data/repositories');
     const { ThemeManager } = require('../ui/theme');
     const {
         MainMenuViewModel,
@@ -60,15 +60,14 @@ export function setupDIModules() {
 
     // Repositories singletons
     diContainer.single('ProjectRepository', () => new ProjectRepository(diContainer.get('Database')));
-    diContainer.single('SettingsRepository', () => new SettingsRepository(diContainer.get('Database')));
 
     // Theme singleton
-    diContainer.single('ThemeManager', () => new ThemeManager(diContainer.get('SettingsRepository')));
+    diContainer.single('ThemeManager', () => new ThemeManager());
 
     // ViewModels - factories since they may need different instances
     diContainer.factory('MainMenuViewModel', () => new MainMenuViewModel());
     diContainer.factory('DashboardViewModel', () => new DashboardViewModel());
-    diContainer.factory('ProjectsViewModel', () => new ProjectsViewModel());
+    diContainer.factory('ProjectsViewModel', () => new ProjectsViewModel(diContainer.get('ProjectRepository')));
     diContainer.factory('ToolsViewModel', () => new ToolsViewModel());
     diContainer.factory('SettingsViewModel', () => new SettingsViewModel(diContainer.get('ThemeManager')));
     diContainer.factory('AboutViewModel', () => new AboutViewModel());

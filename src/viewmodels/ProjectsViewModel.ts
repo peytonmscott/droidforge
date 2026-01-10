@@ -1,18 +1,36 @@
-import type { MenuOption } from '../data/schemas';
+import type { MenuOption, Project } from '../data/schemas';
+import type { ProjectRepository } from '../data/repositories/ProjectRepository';
 
 export class ProjectsViewModel {
-    private projects = [
-        { name: "My Awesome App", status: "Active" },
-        { name: "Web Scraper Tool", status: "Completed" },
-        { name: "API Client", status: "In Progress" },
-        { name: "Data Visualizer", status: "Draft" }
-    ];
+    private projects: Project[] = [];
+
+    constructor(private projectRepo: ProjectRepository) {
+        void this.loadProjects();
+    }
+
+    private async loadProjects(): Promise<void> {
+        try {
+            this.projects = await this.projectRepo.getAllProjects();
+        } catch {
+            this.projects = [];
+        }
+    }
 
     getProjects(): MenuOption[] {
-        return this.projects.map((project, index) => ({
+        if (this.projects.length === 0) {
+            return [
+                {
+                    name: "No projects yet",
+                    description: "Create one to get started",
+                    value: "noop",
+                },
+            ];
+        }
+
+        return this.projects.map((project) => ({
             name: project.name,
             description: `Status: ${project.status}`,
-            value: `open-project-${index}`
+            value: `open-project-${project.id}`,
         }));
     }
 

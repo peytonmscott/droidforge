@@ -1,11 +1,13 @@
 import type { Theme as ThemeType, Settings } from '../../data/schemas';
 
+import { ensureConfigFileExists, updateConfig } from '../../config/config';
+
 export class ThemeManager {
     private currentTheme: ThemeType;
 
-    constructor(private settingsRepo: any) { // TODO: Type properly
+    constructor() {
         this.currentTheme = this.getDefaultTheme();
-        this.loadTheme();
+        void this.loadTheme();
     }
 
     private getDefaultTheme(): ThemeType {
@@ -20,9 +22,9 @@ export class ThemeManager {
 
     private async loadTheme(): Promise<void> {
         try {
-            const settings: Settings = await this.settingsRepo.getSettings();
-            this.currentTheme = settings.theme;
-        } catch (error) {
+            const config = await ensureConfigFileExists();
+            this.currentTheme = config.theme;
+        } catch {
             console.warn('Failed to load theme, using defaults');
         }
     }
@@ -33,12 +35,10 @@ export class ThemeManager {
 
     async updateTheme(newTheme: Partial<ThemeType>): Promise<void> {
         this.currentTheme = { ...this.currentTheme, ...newTheme };
-        
+
         try {
-            const settings = await this.settingsRepo.getSettings();
-            settings.theme = this.currentTheme;
-            await this.settingsRepo.saveSettings(settings);
-        } catch (error) {
+            await updateConfig({ theme: this.currentTheme });
+        } catch {
             console.warn('Failed to save theme');
         }
     }
