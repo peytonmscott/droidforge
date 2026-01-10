@@ -68,6 +68,12 @@ export class ProjectRepository {
 
     async saveProject(project: Project): Promise<void> {
         return new Promise((resolve, reject) => {
+            const projectPath = String(project.path ?? '').trim();
+            if (!projectPath) {
+                reject(new Error('Project path must be a non-empty string'));
+                return;
+            }
+
             const sql = `
                 INSERT OR REPLACE INTO projects (id, name, path, status, description, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -75,7 +81,7 @@ export class ProjectRepository {
             const params = [
                 project.id,
                 project.name,
-                project.path,
+                projectPath,
                 project.status,
                 project.description || null,
                 project.createdAt.toISOString(),
