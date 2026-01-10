@@ -89,6 +89,16 @@ async function confirmUpdate(command: string): Promise<boolean> {
     }
 }
 
+async function runCommand(command: string, args: string[]): Promise<number> {
+    const proc = Bun.spawn([command, ...args], {
+        stdin: 'inherit',
+        stdout: 'inherit',
+        stderr: 'inherit',
+    });
+
+    return await proc.exited;
+}
+
 export async function runUpdate(args: string[]): Promise<void> {
     const checkOnly = args.includes('--check');
     const autoYes = args.includes('--yes') || args.includes('-y');
@@ -101,38 +111,55 @@ export async function runUpdate(args: string[]): Promise<void> {
         return;
     }
 
-    let cmd: string;
-    let cmdArgs: string[];
+    const hasBun = Boolean(Bun.which('bun'));
+    const hasNpm = Boolean(Bun.which('npm'));
 
-    if (Bun.which('bun')) {
-        cmd = 'bun';
-        cmdArgs = ['add', '-g', spec];
-    } else if (Bun.which('npm')) {
-        cmd = 'npm';
-        cmdArgs = ['i', '-g', spec];
-    } else {
+    if (!hasBun && !hasNpm) {
         throw new Error('Neither bun nor npm is available on PATH.');
     }
 
-    const fullCommand = `${cmd} ${cmdArgs.join(' ')}`;
+    if (hasBun) {
+        const uninstallCommand = 'bun remove -g droidforge';
+        const installCommand = `bun add -g ${spec}`;
+
+        if (!autoYes) {
+            const confirmed = await confirmUpdate(`${uninstallCommand}\n${installCommand}`);
+            if (!confirmed) {
+                console.log('Cancelled.');
+                return;
+            }
+        } else {
+            console.log(uninstallCommand);
+            console.log(installCommand);
+        }
+
+        // Workaround for Bun DependencyLoop bug when updating a global GitHub package:
+        // uninstall first, then re-install.
+        await runCommand('bun', ['remove', '-g', 'droidforge']);
+
+        const exitCode = await runCommand('bun', ['add', '-g', spec]);
+        if (exitCode !== 0) {
+            throw new Error(`Update command failed with exit code ${exitCode}`);
+        }
+
+        console.log(`Updated to ${latest.ref}. Restart droidforge.`);
+        return;
+    }
+
+    // npm fallback
+    const npmCommand = `npm i -g ${spec}`;
 
     if (!autoYes) {
-        const confirmed = await confirmUpdate(fullCommand);
+        const confirmed = await confirmUpdate(npmCommand);
         if (!confirmed) {
             console.log('Cancelled.');
             return;
         }
     } else {
-        console.log(fullCommand);
+        console.log(npmCommand);
     }
 
-    const proc = Bun.spawn([cmd, ...cmdArgs], {
-        stdin: 'inherit',
-        stdout: 'inherit',
-        stderr: 'inherit',
-    });
-
-    const exitCode = await proc.exited;
+    const exitCode = await runCommand('npm', ['i', '-g', spec]);
     if (exitCode !== 0) {
         throw new Error(`Update command failed with exit code ${exitCode}`);
     }

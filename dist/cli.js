@@ -2281,6 +2281,14 @@ Proceed? [y/N] `)).trim().toLowerCase();
     rl.close();
   }
 }
+async function runCommand(command, args) {
+  const proc = Bun.spawn([command, ...args], {
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit"
+  });
+  return await proc.exited;
+}
 async function runUpdate(args) {
   const checkOnly = args.includes("--check");
   const autoYes = args.includes("--yes") || args.includes("-y");
@@ -2290,33 +2298,44 @@ async function runUpdate(args) {
     console.log(latest.ref);
     return;
   }
-  let cmd;
-  let cmdArgs;
-  if (Bun.which("bun")) {
-    cmd = "bun";
-    cmdArgs = ["add", "-g", spec];
-  } else if (Bun.which("npm")) {
-    cmd = "npm";
-    cmdArgs = ["i", "-g", spec];
-  } else {
+  const hasBun = Boolean(Bun.which("bun"));
+  const hasNpm = Boolean(Bun.which("npm"));
+  if (!hasBun && !hasNpm) {
     throw new Error("Neither bun nor npm is available on PATH.");
   }
-  const fullCommand = `${cmd} ${cmdArgs.join(" ")}`;
+  if (hasBun) {
+    const uninstallCommand = "bun remove -g droidforge";
+    const installCommand = `bun add -g ${spec}`;
+    if (!autoYes) {
+      const confirmed = await confirmUpdate(`${uninstallCommand}
+${installCommand}`);
+      if (!confirmed) {
+        console.log("Cancelled.");
+        return;
+      }
+    } else {
+      console.log(uninstallCommand);
+      console.log(installCommand);
+    }
+    await runCommand("bun", ["remove", "-g", "droidforge"]);
+    const exitCode2 = await runCommand("bun", ["add", "-g", spec]);
+    if (exitCode2 !== 0) {
+      throw new Error(`Update command failed with exit code ${exitCode2}`);
+    }
+    console.log(`Updated to ${latest.ref}. Restart droidforge.`);
+    return;
+  }
+  const npmCommand = `npm i -g ${spec}`;
   if (!autoYes) {
-    const confirmed = await confirmUpdate(fullCommand);
+    const confirmed = await confirmUpdate(npmCommand);
     if (!confirmed) {
       console.log("Cancelled.");
       return;
     }
   } else {
-    console.log(fullCommand);
+    console.log(npmCommand);
   }
-  const proc = Bun.spawn([cmd, ...cmdArgs], {
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit"
-  });
-  const exitCode = await proc.exited;
+  const exitCode = await runCommand("npm", ["i", "-g", spec]);
   if (exitCode !== 0) {
     throw new Error(`Update command failed with exit code ${exitCode}`);
   }
