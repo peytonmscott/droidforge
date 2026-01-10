@@ -19,6 +19,14 @@ npm i -g github:peytonmscott/droidforge
 
 This installs a `droidforge` binary on your `PATH`.
 
+## Update
+
+```bash
+droidforge update
+```
+
+Uses the latest GitHub Release tag.
+
 ## Config + persistence
 
 On first run, Droidforge creates:

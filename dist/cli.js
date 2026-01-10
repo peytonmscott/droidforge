@@ -174,6 +174,82 @@ var init_config = __esm(() => {
   init_paths();
 });
 
+// src/bootstrap.ts
+import fs2 from "fs";
+import path3 from "path";
+import sqlite3 from "sqlite3";
+async function migrateDbFileIfNeeded(fromPath, toPath) {
+  try {
+    await fs2.promises.access(fromPath, fs2.constants.F_OK);
+  } catch {
+    return false;
+  }
+  try {
+    await fs2.promises.access(toPath, fs2.constants.F_OK);
+    return false;
+  } catch {}
+  await fs2.promises.mkdir(path3.dirname(toPath), { recursive: true });
+  try {
+    await fs2.promises.rename(fromPath, toPath);
+  } catch {
+    await fs2.promises.copyFile(fromPath, toPath);
+    await fs2.promises.unlink(fromPath).catch(() => {
+      return;
+    });
+  }
+  return true;
+}
+async function readSettingsFromSqlite(dbPath) {
+  return new Promise((resolve) => {
+    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
+      if (err) {
+        resolve(null);
+      }
+    });
+    db.get("SELECT * FROM settings WHERE id = 1", (err, row) => {
+      if (err || !row) {
+        db.close();
+        resolve(null);
+        return;
+      }
+      try {
+        const theme = JSON.parse(row.theme);
+        const preferences = JSON.parse(row.preferences);
+        db.close();
+        resolve({ theme, preferences });
+      } catch {
+        db.close();
+        resolve(null);
+      }
+    });
+  });
+}
+async function bootstrap() {
+  await ensureConfigDirExists();
+  const configPath = path3.join(getConfigDir(), "droidforge.json");
+  const hasConfig = await fs2.promises.access(configPath, fs2.constants.F_OK).then(() => true).catch(() => false);
+  if (!hasConfig) {
+    const legacyDbPath = getLegacyDbPath();
+    const legacySettings = await readSettingsFromSqlite(legacyDbPath);
+    if (legacySettings) {
+      await saveConfig({
+        version: 1,
+        theme: legacySettings.theme,
+        preferences: legacySettings.preferences
+      });
+    } else {
+      await saveConfig(getDefaultConfig());
+    }
+  } else {
+    await ensureConfigFileExists();
+  }
+  await migrateDbFileIfNeeded(getLegacyDbPath(), getDbPath());
+}
+var init_bootstrap = __esm(() => {
+  init_config();
+  init_paths();
+});
+
 // src/data/repositories/Database.ts
 import sqlite32 from "sqlite3";
 import fs3 from "fs";
@@ -1184,84 +1260,6 @@ var init_viewmodels = __esm(() => {
   init_ActionsViewModel();
 });
 
-// src/index.ts
-import { createCliRenderer } from "@opentui/core";
-import path7 from "path";
-
-// src/bootstrap.ts
-init_config();
-init_paths();
-import fs2 from "fs";
-import path3 from "path";
-import sqlite3 from "sqlite3";
-async function migrateDbFileIfNeeded(fromPath, toPath) {
-  try {
-    await fs2.promises.access(fromPath, fs2.constants.F_OK);
-  } catch {
-    return false;
-  }
-  try {
-    await fs2.promises.access(toPath, fs2.constants.F_OK);
-    return false;
-  } catch {}
-  await fs2.promises.mkdir(path3.dirname(toPath), { recursive: true });
-  try {
-    await fs2.promises.rename(fromPath, toPath);
-  } catch {
-    await fs2.promises.copyFile(fromPath, toPath);
-    await fs2.promises.unlink(fromPath).catch(() => {
-      return;
-    });
-  }
-  return true;
-}
-async function readSettingsFromSqlite(dbPath) {
-  return new Promise((resolve) => {
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-      if (err) {
-        resolve(null);
-      }
-    });
-    db.get("SELECT * FROM settings WHERE id = 1", (err, row) => {
-      if (err || !row) {
-        db.close();
-        resolve(null);
-        return;
-      }
-      try {
-        const theme = JSON.parse(row.theme);
-        const preferences = JSON.parse(row.preferences);
-        db.close();
-        resolve({ theme, preferences });
-      } catch {
-        db.close();
-        resolve(null);
-      }
-    });
-  });
-}
-async function bootstrap() {
-  await ensureConfigDirExists();
-  const configPath = path3.join(getConfigDir(), "droidforge.json");
-  const hasConfig = await fs2.promises.access(configPath, fs2.constants.F_OK).then(() => true).catch(() => false);
-  if (!hasConfig) {
-    const legacyDbPath = getLegacyDbPath();
-    const legacySettings = await readSettingsFromSqlite(legacyDbPath);
-    if (legacySettings) {
-      await saveConfig({
-        version: 1,
-        theme: legacySettings.theme,
-        preferences: legacySettings.preferences
-      });
-    } else {
-      await saveConfig(getDefaultConfig());
-    }
-  } else {
-    await ensureConfigFileExists();
-  }
-  await migrateDbFileIfNeeded(getLegacyDbPath(), getDbPath());
-}
-
 // src/di/container.ts
 class DIContainer {
   singletons = new Map;
@@ -1287,7 +1285,6 @@ class DIContainer {
     throw new Error(`No registration found for key: ${key}`);
   }
 }
-var diContainer = new DIContainer;
 function setupDIModules() {
   const { Database: Database2, ProjectRepository: ProjectRepository2 } = (init_repositories(), __toCommonJS(exports_repositories));
   const { ThemeManager: ThemeManager2 } = (init_theme(), __toCommonJS(exports_theme));
@@ -1311,6 +1308,16 @@ function setupDIModules() {
   diContainer.factory("AboutViewModel", () => new AboutViewModel2);
   diContainer.factory("ActionsViewModel", () => new ActionsViewModel2);
 }
+var diContainer;
+var init_container = __esm(() => {
+  diContainer = new DIContainer;
+});
+
+// src/di/index.ts
+var init_di = __esm(() => {
+  init_container();
+});
+
 // src/utilities/renderer.ts
 function clearCurrentView(renderer, currentViewElements, menuSelect) {
   currentViewElements.forEach((element) => {
@@ -1323,6 +1330,7 @@ function clearCurrentView(renderer, currentViewElements, menuSelect) {
     menuSelect.destroy();
   }
 }
+
 // src/utilities/navigation.ts
 class NavigationManager {
   currentView = "menu";
@@ -1360,6 +1368,8 @@ class NavigationManager {
     return this.viewStack.length > 1;
   }
 }
+var init_navigation = () => {};
+
 // src/utilities/androidProjectName.ts
 import fs5 from "fs";
 import path5 from "path";
@@ -1381,6 +1391,8 @@ function getAndroidProjectName(projectRoot) {
   }
   return path5.basename(projectRoot);
 }
+var init_androidProjectName = () => {};
+
 // src/utilities/projectMemory.ts
 import crypto from "crypto";
 import path6 from "path";
@@ -1391,8 +1403,14 @@ function projectIdFromPath(projectPath) {
   const normalized = normalizeProjectPath(projectPath);
   return crypto.createHash("sha1").update(normalized).digest("hex");
 }
-// src/ui/view/MainMenuView.ts
-import { BoxRenderable as BoxRenderable4 } from "@opentui/core";
+var init_projectMemory = () => {};
+
+// src/utilities/index.ts
+var init_utilities = __esm(() => {
+  init_navigation();
+  init_androidProjectName();
+  init_projectMemory();
+});
 
 // src/ui/components/Header.ts
 import { ASCIIFont, Text, TextAttributes, BoxRenderable } from "@opentui/core";
@@ -1427,6 +1445,8 @@ function Header(renderer, title, subtitle) {
   }
   return headerBox;
 }
+var init_Header = () => {};
+
 // src/ui/components/Footer.ts
 import { Text as Text2, BoxRenderable as BoxRenderable2 } from "@opentui/core";
 function Footer(renderer, content, theme) {
@@ -1445,6 +1465,8 @@ function Footer(renderer, content, theme) {
   }));
   return footerBox;
 }
+var init_Footer = () => {};
+
 // src/ui/components/Panel.ts
 import { BoxRenderable as BoxRenderable3 } from "@opentui/core";
 function Panel(renderer, props) {
@@ -1462,6 +1484,8 @@ function Panel(renderer, props) {
   });
   return panel;
 }
+var init_Panel = () => {};
+
 // src/ui/components/SelectMenu.ts
 import { SelectRenderable, SelectRenderableEvents } from "@opentui/core";
 function SelectMenu(renderer, props) {
@@ -1489,7 +1513,18 @@ function SelectMenu(renderer, props) {
   }
   return select;
 }
+var init_SelectMenu = () => {};
+
+// src/ui/components/index.ts
+var init_components = __esm(() => {
+  init_Header();
+  init_Footer();
+  init_Panel();
+  init_SelectMenu();
+});
+
 // src/ui/view/MainMenuView.ts
+import { BoxRenderable as BoxRenderable4 } from "@opentui/core";
 function MainMenuView(renderer, viewModel, onNavigate) {
   const detector = new ProjectDetection;
   const isAndroid = detector.detectAndroidProject(process.cwd());
@@ -1527,6 +1562,10 @@ function MainMenuView(renderer, viewModel, onNavigate) {
   menuContainer.add(selectContainer);
   return menuContainer;
 }
+var init_MainMenuView = __esm(() => {
+  init_components();
+});
+
 // src/ui/view/DashboardView.ts
 import { Text as Text4, BoxRenderable as BoxRenderable5 } from "@opentui/core";
 function DashboardView(renderer, viewModel) {
@@ -1567,6 +1606,10 @@ function DashboardView(renderer, viewModel) {
   dashboardContainer.add(footer);
   return dashboardContainer;
 }
+var init_DashboardView = __esm(() => {
+  init_components();
+});
+
 // src/ui/view/ProjectsView.ts
 import { BoxRenderable as BoxRenderable6 } from "@opentui/core";
 function ProjectsView(renderer, viewModel, onNavigate, onSelectCreated) {
@@ -1619,6 +1662,10 @@ function ProjectsView(renderer, viewModel, onNavigate, onSelectCreated) {
   projectsContainer.add(footer);
   return projectsContainer;
 }
+var init_ProjectsView = __esm(() => {
+  init_components();
+});
+
 // src/ui/view/ToolsView.ts
 import { Text as Text5, BoxRenderable as BoxRenderable7 } from "@opentui/core";
 function ToolsView(renderer, viewModel) {
@@ -1657,6 +1704,10 @@ function ToolsView(renderer, viewModel) {
   toolsContainer.add(footer);
   return toolsContainer;
 }
+var init_ToolsView = __esm(() => {
+  init_components();
+});
+
 // src/ui/view/SettingsView.ts
 import { Text as Text6, BoxRenderable as BoxRenderable8 } from "@opentui/core";
 function SettingsView(renderer, viewModel) {
@@ -1699,6 +1750,10 @@ function SettingsView(renderer, viewModel) {
   settingsContainer.add(footer);
   return settingsContainer;
 }
+var init_SettingsView = __esm(() => {
+  init_components();
+});
+
 // src/ui/view/AboutView.ts
 import { Text as Text7, BoxRenderable as BoxRenderable9, ASCIIFont as ASCIIFont2 } from "@opentui/core";
 function AboutView(renderer, viewModel) {
@@ -1739,6 +1794,10 @@ function AboutView(renderer, viewModel) {
   aboutContainer.add(footer);
   return aboutContainer;
 }
+var init_AboutView = __esm(() => {
+  init_components();
+});
+
 // src/ui/view/ActionsView.ts
 import { BoxRenderable as BoxRenderable10, Text as Text8, TextAttributes as TextAttributes3 } from "@opentui/core";
 function ActionsView(renderer, viewModel, onNavigate) {
@@ -1807,6 +1866,10 @@ function ActionsView(renderer, viewModel, onNavigate) {
   refreshMenu();
   return container;
 }
+var init_ActionsView = __esm(() => {
+  init_components();
+});
+
 // src/ui/view/ActionOutputView.ts
 import { BoxRenderable as BoxRenderable11, Text as Text9, TextAttributes as TextAttributes4 } from "@opentui/core";
 function ActionOutputView(renderer, viewModel, command, onBack) {
@@ -1923,19 +1986,24 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
   viewModel.runGradleCommand(command);
   return container;
 }
+var init_ActionOutputView = () => {};
+
+// src/ui/view/index.ts
+var init_view = __esm(() => {
+  init_MainMenuView();
+  init_DashboardView();
+  init_ProjectsView();
+  init_ToolsView();
+  init_SettingsView();
+  init_AboutView();
+  init_ActionsView();
+  init_ActionOutputView();
+});
+
 // src/index.ts
-var targetDir = process.argv[2];
-if (targetDir) {
-  const resolvedPath = path7.resolve(targetDir);
-  process.chdir(resolvedPath);
-}
-var projectDetection = new ProjectDetection;
-var detectedRoot = projectDetection.findAndroidProjectRoot(process.cwd());
-if (detectedRoot) {
-  process.chdir(detectedRoot);
-}
-await bootstrap();
-setupDIModules();
+var exports_src = {};
+import { createCliRenderer } from "@opentui/core";
+import path7 from "path";
 async function rememberCurrentAndroidProject() {
   const detection = projectDetection.detectAndroidProject(process.cwd());
   if (!detection.isAndroidProject || !detection.projectRoot)
@@ -1956,11 +2024,6 @@ async function rememberCurrentAndroidProject() {
     updatedAt: now
   });
 }
-await rememberCurrentAndroidProject();
-var renderer = await createCliRenderer({ exitOnCtrlC: true });
-var navigation = new NavigationManager;
-var currentViewElements = [];
-var currentSelectElement = null;
 function renderCurrentView() {
   clearCurrentView(renderer, currentViewElements, currentSelectElement);
   currentSelectElement = null;
@@ -2073,44 +2136,154 @@ function renderCurrentView() {
     }
   }
 }
-renderer.keyInput.on("keypress", (key) => {
-  const currentView = navigation.getCurrentView();
-  if (key.name === "escape") {
-    if (currentView === "projects") {
-      const projectsViewModel = diContainer.get("ProjectsViewModel");
-      if (projectsViewModel.isConfirmingRemoval()) {
-        projectsViewModel.cancelRemove();
-        return;
-      }
-    }
-    if (currentView !== "menu") {
-      navigation.navigateTo("menu");
-      renderCurrentView();
-    }
-    return;
+var targetDir, projectDetection, detectedRoot, renderer, navigation, currentViewElements, currentSelectElement = null;
+var init_src = __esm(async () => {
+  init_bootstrap();
+  init_di();
+  init_utilities();
+  init_view();
+  targetDir = process.argv[2];
+  if (targetDir) {
+    const resolvedPath = path7.resolve(targetDir);
+    process.chdir(resolvedPath);
   }
-  if (currentView === "projects") {
-    const projectsViewModel = diContainer.get("ProjectsViewModel");
-    const keyName = (key.name || "").toLowerCase();
-    if (projectsViewModel.isConfirmingRemoval()) {
-      if (keyName === "y") {
-        projectsViewModel.confirmRemove();
+  projectDetection = new ProjectDetection;
+  detectedRoot = projectDetection.findAndroidProjectRoot(process.cwd());
+  if (detectedRoot) {
+    process.chdir(detectedRoot);
+  }
+  await bootstrap();
+  setupDIModules();
+  await rememberCurrentAndroidProject();
+  renderer = await createCliRenderer({ exitOnCtrlC: true });
+  navigation = new NavigationManager;
+  currentViewElements = [];
+  renderer.keyInput.on("keypress", (key) => {
+    const currentView = navigation.getCurrentView();
+    if (key.name === "escape") {
+      if (currentView === "projects") {
+        const projectsViewModel = diContainer.get("ProjectsViewModel");
+        if (projectsViewModel.isConfirmingRemoval()) {
+          projectsViewModel.cancelRemove();
+          return;
+        }
       }
-      if (keyName === "n") {
-        projectsViewModel.cancelRemove();
+      if (currentView !== "menu") {
+        navigation.navigateTo("menu");
+        renderCurrentView();
       }
       return;
     }
-    if (keyName === "r") {
-      const select = currentSelectElement;
-      const selectedOption = select?.getSelectedOption?.();
-      const selectedValue = typeof selectedOption?.value === "string" ? selectedOption.value : "";
-      if (selectedValue.startsWith("open-project-")) {
-        const id = selectedValue.slice("open-project-".length);
-        const selectedIndex = select?.getSelectedIndex?.() ?? 0;
-        projectsViewModel.requestRemoveProjectById(id, selectedIndex);
+    if (currentView === "projects") {
+      const projectsViewModel = diContainer.get("ProjectsViewModel");
+      const keyName = (key.name || "").toLowerCase();
+      if (projectsViewModel.isConfirmingRemoval()) {
+        if (keyName === "y") {
+          projectsViewModel.confirmRemove();
+        }
+        if (keyName === "n") {
+          projectsViewModel.cancelRemove();
+        }
+        return;
+      }
+      if (keyName === "r") {
+        const select = currentSelectElement;
+        const selectedOption = select?.getSelectedOption?.();
+        const selectedValue = typeof selectedOption?.value === "string" ? selectedOption.value : "";
+        if (selectedValue.startsWith("open-project-")) {
+          const id = selectedValue.slice("open-project-".length);
+          const selectedIndex = select?.getSelectedIndex?.() ?? 0;
+          projectsViewModel.requestRemoveProjectById(id, selectedIndex);
+        }
       }
     }
-  }
+  });
+  renderCurrentView();
 });
-renderCurrentView();
+
+// src/cli.ts
+import readline from "readline/promises";
+import { stdin as input, stdout as output } from "process";
+var REPO = "peytonmscott/droidforge";
+async function getLatestRef() {
+  const headers = {
+    accept: "application/vnd.github+json",
+    "user-agent": "droidforge"
+  };
+  const releaseResponse = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers });
+  if (releaseResponse.ok) {
+    const payload = await releaseResponse.json();
+    const tag = String(payload?.tag_name ?? "").trim();
+    if (!tag)
+      throw new Error("Latest release response missing tag_name");
+    return { ref: tag, source: "release" };
+  }
+  if (releaseResponse.status === 404) {
+    const tagsResponse = await fetch(`https://api.github.com/repos/${REPO}/tags?per_page=1`, { headers });
+    if (tagsResponse.ok) {
+      const tags = await tagsResponse.json();
+      const tag = String(tags?.[0]?.name ?? "").trim();
+      if (tag)
+        return { ref: tag, source: "tag" };
+    }
+    return { ref: "main", source: "default" };
+  }
+  throw new Error(`Failed to fetch latest release: ${releaseResponse.status} ${releaseResponse.statusText}`);
+}
+async function confirmUpdate(command) {
+  const rl = readline.createInterface({ input, output });
+  try {
+    const answer = (await rl.question(`${command}
+Proceed? [y/N] `)).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
+}
+async function runUpdate(args) {
+  const checkOnly = args.includes("--check");
+  const autoYes = args.includes("--yes") || args.includes("-y");
+  const latest = await getLatestRef();
+  const spec = `github:${REPO}#${latest.ref}`;
+  if (checkOnly) {
+    console.log(latest.ref);
+    return;
+  }
+  let cmd;
+  let cmdArgs;
+  if (Bun.which("bun")) {
+    cmd = "bun";
+    cmdArgs = ["add", "-g", spec];
+  } else if (Bun.which("npm")) {
+    cmd = "npm";
+    cmdArgs = ["i", "-g", spec];
+  } else {
+    throw new Error("Neither bun nor npm is available on PATH.");
+  }
+  const fullCommand = `${cmd} ${cmdArgs.join(" ")}`;
+  if (!autoYes) {
+    const confirmed = await confirmUpdate(fullCommand);
+    if (!confirmed) {
+      console.log("Cancelled.");
+      return;
+    }
+  } else {
+    console.log(fullCommand);
+  }
+  const proc = Bun.spawn([cmd, ...cmdArgs], {
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit"
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(`Update command failed with exit code ${exitCode}`);
+  }
+  console.log(`Updated to ${latest.ref}. Restart droidforge.`);
+}
+var [command, ...rest] = process.argv.slice(2);
+if (command === "update") {
+  await runUpdate(rest);
+} else {
+  await init_src().then(() => exports_src);
+}
