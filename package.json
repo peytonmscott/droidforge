@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "build": "bun build src/cli.ts --outfile dist/cli.js --target node --format esm --packages external --banner '#!/usr/bin/env node\\n'",
+    "build": "bun build src/cli.ts --outfile dist/cli.js --target bun --format esm --packages external",
     "test": "bun test"
   },
   "devDependencies": {

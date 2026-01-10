@@ -1,5 +1,5 @@
-#!/usr/bin/env node\n
-import { createRequire } from "node:module";
+#!/usr/bin/env bun
+// @bun
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -28,7 +28,7 @@ var __export = (target, all) => {
     });
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
-var __require = /* @__PURE__ */ createRequire(import.meta.url);
+var __require = import.meta.require;
 
 // src/utilities/paths.ts
 import os from "os";
@@ -799,7 +799,7 @@ var init_ActionsViewModel = __esm(() => {
       switch (this._menuState) {
         case "loading":
           return [{
-            name: "Loading Gradle tasks…",
+            name: "Loading Gradle tasks\u2026",
             description: "Please wait",
             value: "__loading__"
           }];
@@ -964,7 +964,7 @@ var init_ActionsViewModel = __esm(() => {
         const task = index.get(resolved);
         const meta = CURATED_TASK_LABELS[baseTask];
         const resolvedDescription = task?.description?.trim();
-        const suffix = resolvedDescription ? ` — ${resolvedDescription}` : ` — ${meta.fallbackDescription}`;
+        const suffix = resolvedDescription ? ` \u2014 ${resolvedDescription}` : ` \u2014 ${meta.fallbackDescription}`;
         options.push({
           name: meta.label,
           description: `${resolved}${suffix}`,
@@ -974,7 +974,7 @@ var init_ActionsViewModel = __esm(() => {
       if (options.length === 0) {
         options.push({
           name: "No common tasks found",
-          description: "Select “Show all tasks” to browse everything",
+          description: "Select \u201CShow all tasks\u201D to browse everything",
           value: "__no-curated__"
         });
       }
@@ -1404,7 +1404,7 @@ function DashboardView(renderer, viewModel) {
     flexGrow: 1
   });
   viewModel.getRecentProjects().forEach((project) => {
-    leftPanel.add(Text4({ content: `• ${project}`, margin: 1 }));
+    leftPanel.add(Text4({ content: `\u2022 ${project}`, margin: 1 }));
   });
   const rightPanel = Panel(renderer, {
     id: "stats-panel",
@@ -1463,7 +1463,7 @@ function ProjectsView(renderer, viewModel, onNavigate) {
   });
   selectContainer.add(selectMenu);
   projectsContainer.add(selectContainer);
-  const footer = Footer(renderer, "ESC: Back to Menu | ↑↓: Navigate | ENTER: Select");
+  const footer = Footer(renderer, "ESC: Back to Menu | \u2191\u2193: Navigate | ENTER: Select");
   projectsContainer.add(footer);
   return projectsContainer;
 }
@@ -1488,7 +1488,7 @@ function ToolsView(renderer, viewModel) {
     flexGrow: 1
   });
   viewModel.getCodeGenerators().forEach((generator) => {
-    leftPanel.add(Text5({ content: `• ${generator}`, margin: 1 }));
+    leftPanel.add(Text5({ content: `\u2022 ${generator}`, margin: 1 }));
   });
   const rightPanel = Panel(renderer, {
     id: "tools-utilities",
@@ -1496,7 +1496,7 @@ function ToolsView(renderer, viewModel) {
     flexGrow: 1
   });
   viewModel.getUtilities().forEach((utility) => {
-    rightPanel.add(Text5({ content: `• ${utility}`, margin: 1 }));
+    rightPanel.add(Text5({ content: `\u2022 ${utility}`, margin: 1 }));
   });
   contentBox.add(leftPanel);
   contentBox.add(rightPanel);
@@ -1513,7 +1513,7 @@ function SettingsView(renderer, viewModel) {
     flexDirection: "column",
     flexGrow: 1
   });
-  const header = Header(renderer, "⚙️ Settings - Configuration");
+  const header = Header(renderer, "\u2699\uFE0F Settings - Configuration");
   settingsContainer.add(header);
   const contentBox = new BoxRenderable8(renderer, {
     id: "settings-content",
@@ -1555,7 +1555,7 @@ function AboutView(renderer, viewModel) {
     flexDirection: "column",
     flexGrow: 1
   });
-  const header = Header(renderer, "ℹ️ About - Droid Forge");
+  const header = Header(renderer, "\u2139\uFE0F About - Droid Forge");
   aboutContainer.add(header);
   const contentBox = new BoxRenderable9(renderer, {
     id: "about-content",
@@ -1579,7 +1579,7 @@ function AboutView(renderer, viewModel) {
   infoBox.add(Text7({ content: "", margin: 1 }));
   infoBox.add(Text7({ content: "Features:", attributes: 1, margin: 1 }));
   viewModel.getFeatures().forEach((feature) => {
-    infoBox.add(Text7({ content: `• ${feature}`, margin: 1 }));
+    infoBox.add(Text7({ content: `\u2022 ${feature}`, margin: 1 }));
   });
   contentBox.add(infoBox);
   aboutContainer.add(contentBox);
@@ -1706,10 +1706,10 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
     outputPanel.remove("output-text");
     outputPanel.add(outputText);
     const stateIcons = {
-      idle: "⏸",
-      running: "⏳",
-      completed: "✅",
-      error: "❌"
+      idle: "\u23F8",
+      running: "\u23F3",
+      completed: "\u2705",
+      error: "\u274C"
     };
     const stateIcon = stateIcons[viewModel.state];
     const exitInfo = output.exitCode !== null ? ` (exit: ${output.exitCode})` : "";
