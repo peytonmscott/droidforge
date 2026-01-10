@@ -77,4 +77,8 @@ export function setupDIModules() {
     diContainer.factory('AboutViewModel', () => new AboutViewModel());
     diContainer.factory('ActionsViewModel', () => new ActionsViewModel());
     diContainer.factory('GradleViewModel', () => new GradleViewModel());
+
+    // Project-scoped Gradle menus (no toggle)
+    diContainer.factory('HammerListViewModel', () => new GradleViewModel({ mode: 'curated', showToggle: false }));
+    diContainer.factory('BlueprintsViewModel', () => new GradleViewModel({ mode: 'all', showToggle: false }));
 }

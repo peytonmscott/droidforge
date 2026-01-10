@@ -10,7 +10,7 @@ export function AboutView(renderer: any, viewModel: AboutViewModel): BoxRenderab
     });
 
     // Header
-    const header = Header(renderer, "ℹ️ About - Droid Forge");
+    const header = Header(renderer, "Maker’s Mark");
     aboutContainer.add(header);
 
     // Main content

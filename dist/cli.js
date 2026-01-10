@@ -573,37 +573,69 @@ var init_theme = __esm(() => {
 
 // src/viewmodels/MainMenuViewModel.ts
 class MainMenuViewModel {
-  menuOptions = [
+  forgeMenuOptions = [
     {
-      name: "Actions",
-      description: "will write something creative later",
-      value: "actions"
-    },
-    {
-      name: "Projects",
-      description: "Manage and create new projects with interactive tools",
+      name: "Project Ledger",
+      description: "Find, open, and switch Android projects",
       value: "projects"
     },
     {
-      name: "Gradle",
-      description: "Browse and run Gradle tasks (all + curated)",
-      value: "gradle"
+      name: "Smithy (Devices)",
+      description: "Manage emulators and connected devices",
+      value: "devices"
     },
     {
-      name: "Settings",
-      description: "Configure application preferences and options",
-      value: "settings"
+      name: "Command Tongs (ADB)",
+      description: "Quick ADB actions without the finger burns",
+      value: "adb"
     },
     {
-      name: "About",
-      description: "Learn about Droid Forge and get help",
+      name: "Maker\u2019s Mark",
+      description: "About Droidforge, version, links",
       value: "about"
     }
   ];
-  getMenuOptions() {
-    return [...this.menuOptions];
+  anvilMenuOptions = [
+    {
+      name: "Strike (Run)",
+      description: "Build \u2192 install \u2192 launch \u2192 open Logcat",
+      value: "actionoutputview:installDebug"
+    },
+    {
+      name: "Temper (Build)",
+      description: "Build the project without deploying",
+      value: "actionoutputview:assembleDebug"
+    },
+    {
+      name: "Kiln View (App Logs)",
+      description: "App-focused Logcat (package/PID filtered)",
+      value: "kiln-view"
+    },
+    {
+      name: "Foundry Logs (Device Logs)",
+      description: "Full device Logcat with filters",
+      value: "foundry-logs"
+    },
+    {
+      name: "Looking Glass (Mirror)",
+      description: "Mirror a physical device display",
+      value: "looking-glass"
+    },
+    {
+      name: "Hammer List (Pinned Tasks)",
+      description: "Your most-used Gradle tasks",
+      value: "hammer-list"
+    },
+    {
+      name: "Blueprints (All Tasks)",
+      description: "Browse/search every Gradle task in the project",
+      value: "blueprints"
+    }
+  ];
+  getMenuOptions(mode) {
+    return mode === "anvil" ? [...this.anvilMenuOptions] : [...this.forgeMenuOptions];
   }
-  onMenuItemSelected(index, option) {
+  onMenuItemSelected(_index, option) {
     return option.value;
   }
 }
@@ -1095,9 +1127,12 @@ var init_GradleViewModel = __esm(() => {
     _menuMessage = null;
     _tasks = [];
     _showAllTasks = false;
+    _showToggle = true;
     _tasksLoadPromise = null;
     _onMenuUpdate = null;
-    constructor() {
+    constructor(options = {}) {
+      this._showAllTasks = options.mode === "all";
+      this._showToggle = options.showToggle ?? true;
       this.loadGradleTasks();
     }
     get inlineMessage() {
@@ -1152,16 +1187,20 @@ var init_GradleViewModel = __esm(() => {
           }];
         case "ready": {
           const taskOptions = this._showAllTasks ? this.buildAllTaskOptions() : this.buildCuratedTaskOptions();
-          const toggleOption = this._showAllTasks ? {
-            name: "Show curated tasks",
-            description: "Return to the recommended shortlist",
-            value: SHOW_CURATED_TASKS_VALUE
-          } : {
-            name: "Show all tasks",
-            description: "List every task from `./gradlew tasks --all`",
-            value: SHOW_ALL_TASKS_VALUE
-          };
-          return [...taskOptions, toggleOption];
+          const options = [...taskOptions];
+          if (this._showToggle) {
+            const toggleOption = this._showAllTasks ? {
+              name: "Show curated tasks",
+              description: "Return to the recommended shortlist",
+              value: SHOW_CURATED_TASKS_VALUE
+            } : {
+              name: "Show all tasks",
+              description: "List every task from `./gradlew tasks --all`",
+              value: SHOW_ALL_TASKS_VALUE
+            };
+            options.push(toggleOption);
+          }
+          return options;
         }
       }
     }
@@ -1368,6 +1407,8 @@ function setupDIModules() {
   diContainer.factory("AboutViewModel", () => new AboutViewModel2);
   diContainer.factory("ActionsViewModel", () => new ActionsViewModel2);
   diContainer.factory("GradleViewModel", () => new GradleViewModel2);
+  diContainer.factory("HammerListViewModel", () => new GradleViewModel2({ mode: "curated", showToggle: false }));
+  diContainer.factory("BlueprintsViewModel", () => new GradleViewModel2({ mode: "all", showToggle: false }));
 }
 var diContainer;
 var init_container = __esm(() => {
@@ -1402,12 +1443,7 @@ class NavigationManager {
     this.viewStack = [initialView];
   }
   getInitialView() {
-    const projectDetection = new ProjectDetection;
-    const project = projectDetection.detectAndroidProject(process.cwd());
-    if (project.isAndroidProject) {
-      return "actions";
-    }
-    return "projects";
+    return "menu";
   }
   getCurrentView() {
     return this.currentView;
@@ -1429,7 +1465,6 @@ class NavigationManager {
     return this.viewStack.length > 1;
   }
 }
-var init_navigation = () => {};
 
 // src/utilities/androidProjectName.ts
 import fs6 from "fs";
@@ -1468,7 +1503,6 @@ var init_projectMemory = () => {};
 
 // src/utilities/index.ts
 var init_utilities = __esm(() => {
-  init_navigation();
   init_androidProjectName();
   init_projectMemory();
 });
@@ -1588,31 +1622,33 @@ var init_components = __esm(() => {
 import { BoxRenderable as BoxRenderable4 } from "@opentui/core";
 function MainMenuView(renderer, viewModel, onNavigate) {
   const detector = new ProjectDetection;
-  const isAndroid = detector.detectAndroidProject(process.cwd());
+  const detection = detector.detectAndroidProject(process.cwd());
+  const mode = detection.isAndroidProject ? "anvil" : "forge";
+  const screenTitle = mode === "anvil" ? "The Anvil" : "Forge";
+  const subtitle = mode === "anvil" ? "Project menu" : "Main menu";
   const menuContainer = new BoxRenderable4(renderer, {
     id: "menu-container",
     alignItems: "center",
     justifyContent: "center",
     flexGrow: 1
   });
-  const header = MainHeader(renderer, "Droid Forge", isAndroid.isAndroidProject.toString() + process.cwd());
+  const header = MainHeader(renderer, screenTitle, subtitle);
   menuContainer.add(header);
   const selectContainer = new BoxRenderable4(renderer, {
     id: "select-container",
-    width: 100,
-    height: 15,
+    width: 120,
+    height: 20,
     border: true,
     borderStyle: "single",
     borderColor: "#475569",
     backgroundColor: "transparent",
-    title: "Main Menu",
-    titleAlignment: "center",
     margin: 2
   });
-  const menuOptions = viewModel.getMenuOptions();
+  const menuOptions = viewModel.getMenuOptions(mode);
   const selectMenu = SelectMenu(renderer, {
     id: "main-menu-select",
     options: menuOptions,
+    height: 18,
     autoFocus: true,
     onSelect: (index, option) => {
       const view = viewModel.onMenuItemSelected(index, option);
@@ -1680,7 +1716,7 @@ function ProjectsView(renderer, viewModel, onNavigate, onSelectCreated) {
     justifyContent: "center",
     flexGrow: 1
   });
-  const header = Header(renderer, "\uD83D\uDCC2 Projects - Create & Manage");
+  const header = Header(renderer, "Project Ledger");
   projectsContainer.add(header);
   const selectContainer = new BoxRenderable6(renderer, {
     id: "select-container",
@@ -1690,7 +1726,7 @@ function ProjectsView(renderer, viewModel, onNavigate, onSelectCreated) {
     borderStyle: "single",
     borderColor: "#475569",
     backgroundColor: "transparent",
-    title: "Projects & Actions",
+    title: "Project Ledger",
     titleAlignment: "center",
     margin: 2
   });
@@ -1823,7 +1859,7 @@ function AboutView(renderer, viewModel) {
     flexDirection: "column",
     flexGrow: 1
   });
-  const header = Header(renderer, "\u2139\uFE0F About - Droid Forge");
+  const header = Header(renderer, "Maker\u2019s Mark");
   aboutContainer.add(header);
   const contentBox = new BoxRenderable9(renderer, {
     id: "about-content",
@@ -1933,7 +1969,7 @@ var init_ActionsView = __esm(() => {
 
 // src/ui/view/GradleView.ts
 import { BoxRenderable as BoxRenderable11, Text as Text9, TextAttributes as TextAttributes4 } from "@opentui/core";
-function GradleView(renderer, viewModel, onNavigate) {
+function GradleView(renderer, viewModel, onNavigate, titles = { headerTitle: "Gradle Tasks", panelTitle: "Gradle" }) {
   const container = new BoxRenderable11(renderer, {
     id: "gradle-container",
     alignItems: "center",
@@ -1946,7 +1982,7 @@ function GradleView(renderer, viewModel, onNavigate) {
     justifyContent: "flex-start",
     width: 108
   });
-  headerSection.add(Header(renderer, "Gradle Tasks"));
+  headerSection.add(Header(renderer, titles.headerTitle));
   container.add(headerSection);
   const menuPanel = new BoxRenderable11(renderer, {
     id: "gradle-menu-panel",
@@ -1955,7 +1991,7 @@ function GradleView(renderer, viewModel, onNavigate) {
     border: true,
     borderStyle: "single",
     borderColor: "#475569",
-    title: "Gradle",
+    title: titles.panelTitle,
     titleAlignment: "center",
     margin: 2
   });
@@ -2121,6 +2157,47 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
 }
 var init_ActionOutputView = () => {};
 
+// src/ui/view/ComingSoonView.ts
+import { BoxRenderable as BoxRenderable13, Text as Text11, TextAttributes as TextAttributes6 } from "@opentui/core";
+function ComingSoonView(renderer, title, description) {
+  const container = new BoxRenderable13(renderer, {
+    id: "coming-soon-container",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    flexGrow: 1
+  });
+  container.add(MainHeader(renderer, title, "Coming soon"));
+  const body = new BoxRenderable13(renderer, {
+    id: "coming-soon-body",
+    width: 120,
+    border: true,
+    borderStyle: "single",
+    borderColor: "#475569",
+    backgroundColor: "transparent",
+    padding: 1,
+    margin: 2
+  });
+  body.add(Text11({
+    id: "coming-soon-description",
+    content: description,
+    attributes: TextAttributes6.NONE,
+    wrapMode: "word"
+  }));
+  body.add(Text11({
+    id: "coming-soon-hint",
+    content: `
+ESC: Back`,
+    attributes: TextAttributes6.DIM,
+    wrapMode: "word"
+  }));
+  container.add(body);
+  return container;
+}
+var init_ComingSoonView = __esm(() => {
+  init_components();
+});
+
 // src/ui/view/index.ts
 var init_view = __esm(() => {
   init_MainMenuView();
@@ -2132,6 +2209,7 @@ var init_view = __esm(() => {
   init_ActionsView();
   init_GradleView();
   init_ActionOutputView();
+  init_ComingSoonView();
 });
 
 // src/index.ts
@@ -2167,7 +2245,7 @@ function renderCurrentView() {
     const command = currentView.slice(prefix.length);
     const viewModel = diContainer.get("ActionsViewModel");
     const view = ActionOutputView(renderer, viewModel, command, () => {
-      navigation.navigateTo("actions");
+      navigation.goBack();
       renderCurrentView();
     });
     renderer.root.add(view);
@@ -2210,7 +2288,7 @@ function renderCurrentView() {
                 ...project,
                 updatedAt: new Date
               });
-              navigation.navigateTo("actions");
+              navigation.navigateTo("menu");
               renderCurrentView();
             } catch (error) {
               console.error("Failed to open project:", error);
@@ -2243,6 +2321,62 @@ function renderCurrentView() {
         }
         renderCurrentView();
       });
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "hammer-list": {
+      const viewModel = diContainer.get("HammerListViewModel");
+      const view = GradleView(renderer, viewModel, (action) => {
+        navigation.navigateTo(action);
+        renderCurrentView();
+      }, {
+        headerTitle: "Hammer List (Pinned Tasks)",
+        panelTitle: "Pinned Tasks"
+      });
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "blueprints": {
+      const viewModel = diContainer.get("BlueprintsViewModel");
+      const view = GradleView(renderer, viewModel, (action) => {
+        navigation.navigateTo(action);
+        renderCurrentView();
+      }, {
+        headerTitle: "Blueprints (All Tasks)",
+        panelTitle: "All Tasks"
+      });
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "devices": {
+      const view = ComingSoonView(renderer, "Smithy (Devices)", "Manage emulators and connected devices");
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "adb": {
+      const view = ComingSoonView(renderer, "Command Tongs (ADB)", "Quick ADB actions without the finger burns");
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "kiln-view": {
+      const view = ComingSoonView(renderer, "Kiln View (App Logs)", "App-focused Logcat (package/PID filtered)");
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "foundry-logs": {
+      const view = ComingSoonView(renderer, "Foundry Logs (Device Logs)", "Full device Logcat with filters");
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "looking-glass": {
+      const view = ComingSoonView(renderer, "Looking Glass (Mirror)", "Mirror a physical device display");
       renderer.root.add(view);
       currentViewElements.push(view);
       break;
@@ -2309,6 +2443,9 @@ var init_src = __esm(async () => {
   renderer.keyInput.on("keypress", (key) => {
     const currentView = navigation.getCurrentView();
     if (key.name === "escape") {
+      if (currentView.startsWith("actionoutputview:")) {
+        return;
+      }
       if (currentView === "projects") {
         const projectsViewModel = diContainer.get("ProjectsViewModel");
         if (projectsViewModel.isConfirmingRemoval()) {

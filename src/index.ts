@@ -14,7 +14,8 @@ import {
     AboutView,
     ActionsView,
     GradleView,
-    ActionOutputView
+    ActionOutputView,
+    ComingSoonView
 } from './ui/view';
 
 const targetDir = process.argv[2];
@@ -81,7 +82,7 @@ function renderCurrentView() {
 
         const viewModel = diContainer.get('ActionsViewModel') as any;
         const view = ActionOutputView(renderer, viewModel, command, () => {
-            navigation.navigateTo('actions');
+            navigation.goBack();
             renderCurrentView();
         });
         renderer.root.add(view);
@@ -127,7 +128,7 @@ function renderCurrentView() {
                                 updatedAt: new Date(),
                             });
 
-                            navigation.navigateTo('actions');
+                            navigation.navigateTo('menu');
                             renderCurrentView();
                         } catch (error) {
                             console.error('Failed to open project:', error);
@@ -162,6 +163,82 @@ function renderCurrentView() {
                 }
                 renderCurrentView();
             });
+            renderer.root.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "hammer-list": {
+            const viewModel = diContainer.get('HammerListViewModel') as any;
+            const view = GradleView(renderer, viewModel, (action) => {
+                navigation.navigateTo(action);
+                renderCurrentView();
+            }, {
+                headerTitle: 'Hammer List (Pinned Tasks)',
+                panelTitle: 'Pinned Tasks',
+            });
+            renderer.root.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "blueprints": {
+            const viewModel = diContainer.get('BlueprintsViewModel') as any;
+            const view = GradleView(renderer, viewModel, (action) => {
+                navigation.navigateTo(action);
+                renderCurrentView();
+            }, {
+                headerTitle: 'Blueprints (All Tasks)',
+                panelTitle: 'All Tasks',
+            });
+            renderer.root.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "devices": {
+            const view = ComingSoonView(
+                renderer,
+                'Smithy (Devices)',
+                'Manage emulators and connected devices',
+            );
+            renderer.root.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "adb": {
+            const view = ComingSoonView(
+                renderer,
+                'Command Tongs (ADB)',
+                'Quick ADB actions without the finger burns',
+            );
+            renderer.root.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "kiln-view": {
+            const view = ComingSoonView(
+                renderer,
+                'Kiln View (App Logs)',
+                'App-focused Logcat (package/PID filtered)',
+            );
+            renderer.root.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "foundry-logs": {
+            const view = ComingSoonView(
+                renderer,
+                'Foundry Logs (Device Logs)',
+                'Full device Logcat with filters',
+            );
+            renderer.root.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "looking-glass": {
+            const view = ComingSoonView(
+                renderer,
+                'Looking Glass (Mirror)',
+                'Mirror a physical device display',
+            );
             renderer.root.add(view);
             currentViewElements.push(view);
             break;
@@ -209,6 +286,10 @@ renderer.keyInput.on("keypress", (key: KeyEvent) => {
     const currentView = navigation.getCurrentView();
 
     if (key.name === 'escape') {
+        if (currentView.startsWith('actionoutputview:')) {
+            return;
+        }
+
         if (currentView === 'projects') {
             const projectsViewModel = diContainer.get('ProjectsViewModel') as any;
             if (projectsViewModel.isConfirmingRemoval()) {

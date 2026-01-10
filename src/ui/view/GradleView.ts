@@ -2,10 +2,16 @@ import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
 import { GradleViewModel } from '../../viewmodels';
 import { Header, SelectMenu } from '../components';
 
+export interface GradleViewTitles {
+    headerTitle: string;
+    panelTitle: string;
+}
+
 export function GradleView(
     renderer: any,
     viewModel: GradleViewModel,
-    onNavigate?: (action: string) => void
+    onNavigate?: (action: string) => void,
+    titles: GradleViewTitles = { headerTitle: 'Gradle Tasks', panelTitle: 'Gradle' }
 ): BoxRenderable {
     const container = new BoxRenderable(renderer, {
         id: "gradle-container",
@@ -21,7 +27,7 @@ export function GradleView(
         width: 108,
     });
 
-    headerSection.add(Header(renderer, "Gradle Tasks"));
+    headerSection.add(Header(renderer, titles.headerTitle));
     container.add(headerSection);
 
     const menuPanel = new BoxRenderable(renderer, {
@@ -31,7 +37,7 @@ export function GradleView(
         border: true,
         borderStyle: "single",
         borderColor: "#475569",
-        title: "Gradle",
+        title: titles.panelTitle,
         titleAlignment: "center",
         margin: 2,
     });

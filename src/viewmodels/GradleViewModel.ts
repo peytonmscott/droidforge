@@ -41,6 +41,11 @@ const CURATED_TASK_LABELS: Record<CuratedTaskName, { label: string; fallbackDesc
     assembleRelease: { label: 'Assemble Release', fallbackDescription: 'Builds the release APK/AAB' },
 };
 
+export interface GradleViewModelOptions {
+    mode?: 'curated' | 'all';
+    showToggle?: boolean;
+}
+
 export class GradleViewModel {
     private static taskCache = new Map<string, GradleTask[]>();
 
@@ -48,10 +53,13 @@ export class GradleViewModel {
     private _menuMessage: string | null = null;
     private _tasks: GradleTask[] = [];
     private _showAllTasks = false;
+    private _showToggle = true;
     private _tasksLoadPromise: Promise<void> | null = null;
     private _onMenuUpdate: (() => void) | null = null;
 
-    constructor() {
+    constructor(options: GradleViewModelOptions = {}) {
+        this._showAllTasks = options.mode === 'all';
+        this._showToggle = options.showToggle ?? true;
         void this.loadGradleTasks();
     }
 
@@ -113,19 +121,25 @@ export class GradleViewModel {
                     ? this.buildAllTaskOptions()
                     : this.buildCuratedTaskOptions();
 
-                const toggleOption: MenuOption = this._showAllTasks
-                    ? {
-                        name: 'Show curated tasks',
-                        description: 'Return to the recommended shortlist',
-                        value: SHOW_CURATED_TASKS_VALUE,
-                    }
-                    : {
-                        name: 'Show all tasks',
-                        description: 'List every task from `./gradlew tasks --all`',
-                        value: SHOW_ALL_TASKS_VALUE,
-                    };
+                const options = [...taskOptions];
 
-                return [...taskOptions, toggleOption];
+                if (this._showToggle) {
+                    const toggleOption: MenuOption = this._showAllTasks
+                        ? {
+                            name: 'Show curated tasks',
+                            description: 'Return to the recommended shortlist',
+                            value: SHOW_CURATED_TASKS_VALUE,
+                        }
+                        : {
+                            name: 'Show all tasks',
+                            description: 'List every task from `./gradlew tasks --all`',
+                            value: SHOW_ALL_TASKS_VALUE,
+                        };
+
+                    options.push(toggleOption);
+                }
+
+                return options;
             }
         }
     }
