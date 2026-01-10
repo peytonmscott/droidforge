@@ -212,35 +212,37 @@ class Database {
     }
   }
   initializeTables() {
-    this.db.run(`
-            CREATE TABLE IF NOT EXISTS projects (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                path TEXT,
-                status TEXT NOT NULL,
-                description TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
     this.db.serialize(() => {
-      this.db.all("PRAGMA table_info(projects)", (err, rows) => {
-        if (err)
-          return;
-        const hasPath = Array.isArray(rows) && rows.some((row) => row?.name === "path");
-        if (!hasPath) {
-          this.db.run("ALTER TABLE projects ADD COLUMN path TEXT");
+      this.db.run(`
+                CREATE TABLE IF NOT EXISTS projects (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    path TEXT,
+                    status TEXT NOT NULL,
+                    description TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+      this.db.run("ALTER TABLE projects ADD COLUMN path TEXT", (err) => {
+        const message = String(err?.message ?? "");
+        if (err && !message.toLowerCase().includes("duplicate column name")) {
+          console.warn("Failed to migrate projects.path column:", err);
         }
-        this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path) WHERE path IS NOT NULL");
       });
+      this.db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path) WHERE path IS NOT NULL AND path != ''", (err) => {
+        if (err) {
+          console.warn("Failed to create idx_projects_path index:", err);
+        }
+      });
+      this.db.run(`
+                CREATE TABLE IF NOT EXISTS settings (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    theme TEXT,
+                    preferences TEXT
+                )
+            `);
     });
-    this.db.run(`
-            CREATE TABLE IF NOT EXISTS settings (
-                id INTEGER PRIMARY KEY DEFAULT 1,
-                theme TEXT,
-                preferences TEXT
-            )
-        `);
   }
   getDb() {
     return this.db;
