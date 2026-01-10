@@ -68,7 +68,9 @@ export class Database {
                     this.db.run('ALTER TABLE projects ADD COLUMN path TEXT');
                 }
 
-                this.db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path)');
+                this.db.run(
+                    'CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_path ON projects(path) WHERE path IS NOT NULL'
+                );
             });
         });
 

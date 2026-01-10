@@ -113,20 +113,24 @@ function renderCurrentView() {
                 if (action.startsWith('open-project-')) {
                     const id = action.slice('open-project-'.length);
                     void (async () => {
-                        const projectRepo = diContainer.get('ProjectRepository') as any;
-                        const project = await projectRepo.getProjectById(id);
-                        if (!project?.path) return;
+                        try {
+                            const projectRepo = diContainer.get('ProjectRepository') as any;
+                            const project = await projectRepo.getProjectById(id);
+                            if (!project?.path) return;
 
-                        process.chdir(project.path);
+                            process.chdir(project.path);
 
-                        // Touch updated time
-                        await projectRepo.saveProject({
-                            ...project,
-                            updatedAt: new Date(),
-                        });
+                            // Touch updated time
+                            await projectRepo.saveProject({
+                                ...project,
+                                updatedAt: new Date(),
+                            });
 
-                        navigation.navigateTo('actions');
-                        renderCurrentView();
+                            navigation.navigateTo('actions');
+                            renderCurrentView();
+                        } catch (error) {
+                            console.error('Failed to open project:', error);
+                        }
                     })();
                     return;
                 }
