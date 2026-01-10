@@ -13,6 +13,8 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@opentui/core": "^0.1.66"
+    "@opentui/core": "^0.1.66",
+    "@types/sqlite3": "^5.1.0",
+    "sqlite3": "^5.1.7"
   }
 }

@@ -27,6 +27,23 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .cache
 *.tsbuildinfo
 
+# Bun
+.bun
+
+# local databases / app state
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+.droidforge
+
+# editors
+.vscode
+*.swp
+*.swo
+
 # IntelliJ based IDEs
 .idea
 
