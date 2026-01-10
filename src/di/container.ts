@@ -64,10 +64,13 @@ export function setupDIModules() {
     // Theme singleton
     diContainer.single('ThemeManager', () => new ThemeManager());
 
-    // ViewModels - factories since they may need different instances
+    // ViewModels
     diContainer.factory('MainMenuViewModel', () => new MainMenuViewModel());
     diContainer.factory('DashboardViewModel', () => new DashboardViewModel());
-    diContainer.factory('ProjectsViewModel', () => new ProjectsViewModel(diContainer.get('ProjectRepository')));
+
+    // ProjectsViewModel needs to hold state (selection/confirm flows)
+    diContainer.single('ProjectsViewModel', () => new ProjectsViewModel(diContainer.get('ProjectRepository')));
+
     diContainer.factory('ToolsViewModel', () => new ToolsViewModel());
     diContainer.factory('SettingsViewModel', () => new SettingsViewModel(diContainer.get('ThemeManager')));
     diContainer.factory('AboutViewModel', () => new AboutViewModel());

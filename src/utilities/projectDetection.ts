@@ -9,26 +9,34 @@
 // }
 
 export class ProjectDetection {
+    findAndroidProjectRoot(startDir: string): string | null {
+        const fs = require('fs');
+        const path = require('path');
 
-    isAndroidProject(dir: string): string {
-        const currentDir = dir
+        let currentDir = path.resolve(startDir || process.cwd());
 
-        return currentDir
+        while (true) {
+            const hasSettings =
+                fs.existsSync(path.join(currentDir, 'settings.gradle')) ||
+                fs.existsSync(path.join(currentDir, 'settings.gradle.kts'));
+
+            if (hasSettings) return currentDir;
+
+            const parentDir = path.dirname(currentDir);
+            if (parentDir === currentDir) return null;
+            currentDir = parentDir;
+        }
     }
 
-
     detectAndroidProject(dir: string): DetectionResult {
-        const fs = require('fs')
-        const path = require('path')
-        const currentDir = dir || process.cwd();
-        // 1. Check for settings file (minimum requirement)
-        const settingsFiles = ['settings.gradle', 'settings.gradle.kts'];
-        const hasSettings = settingsFiles.some(f =>
-            fs.existsSync(path.join(currentDir, f))
-        );
-        if (!hasSettings) {
-            return { isAndroidProject: false, confidence: 'high' };
+        const fs = require('fs');
+        const path = require('path');
+
+        const projectRoot = this.findAndroidProjectRoot(dir || process.cwd());
+        if (!projectRoot) {
+            return { isAndroidProject: false, confidence: 'high', projectRoot: null };
         }
+
         // 2. Define all detection strategies
         const androidPlugins = [
             'com.android.application',
@@ -42,10 +50,12 @@ export class ProjectDetection {
             'app/build.gradle.kts'
         ];
         const versionCatalog = 'gradle/libs.versions.toml';
+
         let foundAndroidPlugin = false;
         let projectType: 'application' | 'library' | 'unknown' = 'unknown';
+
         // 3. Check version catalog first (most reliable for modern projects)
-        const tomlPath = path.join(currentDir, versionCatalog);
+        const tomlPath = path.join(projectRoot, versionCatalog);
         if (fs.existsSync(tomlPath)) {
             const content = fs.readFileSync(tomlPath, 'utf8');
             for (const plugin of androidPlugins) {
@@ -58,12 +68,15 @@ export class ProjectDetection {
                 }
             }
         }
+
         // 4. Check build files if not found in version catalog
         if (!foundAndroidPlugin) {
             for (const file of buildFiles) {
-                const filePath = path.join(currentDir, file);
+                const filePath = path.join(projectRoot, file);
                 if (!fs.existsSync(filePath)) continue;
+
                 const content = fs.readFileSync(filePath, 'utf8');
+
                 // Strategy A: Direct plugin declaration (Groovy/Kotlin DSL)
                 // Matches: 'com.android.application', "com.android.application", id("com.android.application")
                 for (const plugin of androidPlugins) {
@@ -78,6 +91,7 @@ export class ProjectDetection {
                         break;
                     }
                 }
+
                 // Strategy B: Version catalog alias reference
                 // Matches: alias(libs.plugins.android.application), alias(libs.plugins.android.library)
                 if (!foundAndroidPlugin) {
@@ -95,19 +109,23 @@ export class ProjectDetection {
                         }
                     }
                 }
+
                 if (foundAndroidPlugin) break;
             }
         }
+
         return {
-            isAndroidProject: foundAndroidPlugin || hasSettings,
+            isAndroidProject: foundAndroidPlugin || Boolean(projectRoot),
             projectType,
-            confidence: foundAndroidPlugin ? 'high' : hasSettings ? 'medium' : 'low'
+            confidence: foundAndroidPlugin ? 'high' : projectRoot ? 'medium' : 'low',
+            projectRoot,
         };
     }
 }
 
 interface DetectionResult {
     isAndroidProject: boolean;
+    projectRoot: string | null;
     projectType?: 'application' | 'library' | 'unknown';
     confidence: 'high' | 'medium' | 'low';
 }
