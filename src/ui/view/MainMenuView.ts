@@ -41,6 +41,7 @@ export function MainMenuView(
         options: menuOptions,
         autoFocus: true,
         theme,
+        itemSpacing: 1,
         onSelect: (index, option) => {
             const view = viewModel.onMenuItemSelected(index, option);
             onNavigate(view);
