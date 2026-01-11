@@ -105,7 +105,7 @@ export class ActionsViewModel {
         }
 
         try {
-            const proc = Bun.spawn(['./gradlew', command, '--console=rich'], {
+            const proc = Bun.spawn(['./gradlew', command, '--console=plain'], {
                 cwd,
                 stdout: 'pipe',
                 stderr: 'pipe',
