@@ -32,7 +32,11 @@ if (targetDir) {
 const projectDetection = new ProjectDetection();
 const detectedRoot = projectDetection.findAndroidProjectRoot(process.cwd());
 if (detectedRoot) {
-    process.chdir(detectedRoot);
+    try {
+        process.chdir(detectedRoot);
+    } catch {
+        // Inaccessible project root - continue with current directory
+    }
 }
 
 await bootstrap();
