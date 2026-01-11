@@ -1,8 +1,8 @@
-import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
+import { BoxRenderable } from "@opentui/core";
 import { GradleViewModel } from '../../viewmodels';
-import { Header, SelectMenu } from '../components';
+import { MainHeader, SelectMenu } from '../components';
 import type { UiTheme } from '../theme';
-import { menuHeaderSectionOptions, menuPanelOptions, wireCompactMenuLayout } from '../layout';
+import { menuPanelOptions, wireCompactMenuLayout } from '../layout';
 
 export interface GradleViewTitles {
     headerTitle: string;
@@ -25,12 +25,10 @@ export function GradleView(
         backgroundColor: theme.backgroundColor ?? "transparent",
     });
 
-    const headerSection = new BoxRenderable(renderer, menuHeaderSectionOptions());
+    const header = MainHeader(renderer, titles.headerTitle, titles.panelTitle, theme);
+    container.add(header);
 
-    headerSection.add(Header(renderer, titles.headerTitle, titles.panelTitle, theme));
-    container.add(headerSection);
-
-    const menuPanel = new BoxRenderable(renderer, menuPanelOptions('gradle-menu-panel', theme));
+    const selectContainer = new BoxRenderable(renderer, menuPanelOptions('gradle-menu-panel', theme));
 
     const selectMenu = SelectMenu(renderer, {
         id: "gradle-select",
@@ -48,39 +46,16 @@ export function GradleView(
         },
     });
 
-    wireCompactMenuLayout(menuPanel, selectMenu);
-
-    function updateInlineMessage(): void {
-        const message = viewModel.inlineMessage;
-
-        headerSection.remove('gradle-message');
-
-        if (!message) return;
-
-        headerSection.add(Text({
-            id: 'gradle-message',
-            content: message,
-            fg: theme.mutedTextColor ?? theme.textColor,
-            attributes: TextAttributes.DIM,
-            margin: 1,
-        }));
-    }
+    wireCompactMenuLayout(selectContainer, selectMenu);
 
     function refreshMenu(): void {
         selectMenu.options = viewModel.getMenuOptions();
-        updateInlineMessage();
     }
 
     viewModel.setMenuUpdateCallback(refreshMenu);
 
-    const menuSection = new BoxRenderable(renderer, {
-        alignItems: "center",
-        justifyContent: "center",
-    });
-
-    menuPanel.add(selectMenu);
-    menuSection.add(menuPanel);
-    container.add(menuSection);
+    selectContainer.add(selectMenu);
+    container.add(selectContainer);
 
     refreshMenu();
 
