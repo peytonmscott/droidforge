@@ -50,6 +50,7 @@ export function ThemePickerView(
         selectedIndex: initialIndex,
         theme,
         autoFocus: true,
+        itemSpacing: 1,
         onSelect: (_idx, option) => {
             const themeId = typeof option.value === 'string' ? option.value : '';
             void viewModel.selectTheme(themeId);
