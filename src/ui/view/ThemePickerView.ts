@@ -31,7 +31,6 @@ export function ThemePickerView(
     const modePref = viewModel.getThemeModePreference();
     const effectiveMode = viewModel.getEffectiveThemeMode();
     headerSection.add(Header(renderer, 'Themes', `Mode: ${modePref} (${effectiveMode}) • Current: ${viewModel.getSelectedThemeId()}`, theme));
-    headerSection.add(Header(renderer, 'Colorschemes', undefined, theme));
     container.add(headerSection);
 
     const panel = new BoxRenderable(renderer, {
