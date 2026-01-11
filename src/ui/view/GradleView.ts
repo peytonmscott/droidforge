@@ -35,7 +35,7 @@ export function GradleView(
         options: viewModel.getMenuOptions(),
         autoFocus: true,
         theme,
-        itemSpacing: 1,
+        itemSpacing: 0.5,
         onSelect: (_index, option) => {
             const value = typeof option.value === 'string' ? option.value : '';
             const result = viewModel.handleMenuSelection(value);
