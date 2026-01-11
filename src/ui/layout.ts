@@ -72,11 +72,7 @@ export function applyCompactMenuLayout(options: {
         const compactSpacing = 0.5;
         const wideSpacing = 1;
 
-        if (typeof options.select.itemSpacing !== "undefined") {
-            options.select.itemSpacing = compact ? compactSpacing : wideSpacing;
-        } else {
-            options.select.itemSpacing = compact ? compactSpacing : wideSpacing;
-        }
+        options.select.itemSpacing = compact ? compactSpacing : wideSpacing;
     }
 }
 
