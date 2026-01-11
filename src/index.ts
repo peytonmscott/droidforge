@@ -231,7 +231,7 @@ function renderCurrentView() {
                                 updatedAt: new Date(),
                             });
 
-                            navigation.navigateTo('actions');
+                            navigation.navigateTo('menu');
                             renderCurrentView();
                         } catch (error) {
                             console.error('Failed to open project:', error);
