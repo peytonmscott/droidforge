@@ -1,5 +1,14 @@
 import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
 import { ActionsViewModel } from '../../viewmodels';
+import { ansiToStyledText } from "../../utilities";
+
+function stripAnsi(text: string): string {
+    return text
+        // CSI
+        .replace(/\u001b\[[0-9;?]*[@-~]/g, '')
+        // OSC (BEL or ST terminator)
+        .replace(/\u001b\][^\u0007]*(\u0007|\u001b\\)/g, '');
+}
 
 export function ActionOutputView(
     renderer: any,
@@ -58,7 +67,7 @@ export function ActionOutputView(
 
         outputText = Text({
             id: "output-text",
-            content: visibleLines.join('\n'),
+            content: ansiToStyledText(visibleLines.join('\n')),
             attributes: TextAttributes.NONE,
             flexGrow: 1,
             wrapMode: 'char',
@@ -106,7 +115,7 @@ export function ActionOutputView(
                 break;
             case 'c':
                 if (viewModel.state === 'completed' || viewModel.state === 'error') {
-                    const text = viewModel.getOutputText();
+                    const text = stripAnsi(viewModel.getOutputText());
                     try {
                         Bun.spawn(['pbcopy'], {
                             stdin: new Response(text).body!
