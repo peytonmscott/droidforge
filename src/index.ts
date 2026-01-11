@@ -21,7 +21,11 @@ import {
 const targetDir = process.argv[2];
 if (targetDir) {
     const resolvedPath = path.resolve(targetDir);
-    process.chdir(resolvedPath);
+    try {
+        process.chdir(resolvedPath);
+    } catch {
+        // Invalid path - continue with current directory
+    }
 }
 
 // Walk up to Android project root if needed
