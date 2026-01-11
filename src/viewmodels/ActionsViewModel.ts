@@ -105,10 +105,15 @@ export class ActionsViewModel {
         }
 
         try {
-            const proc = Bun.spawn(['./gradlew', command], {
+            const proc = Bun.spawn(['./gradlew', command, '--console=rich'], {
                 cwd,
                 stdout: 'pipe',
                 stderr: 'pipe',
+                env: {
+                    ...process.env,
+                    // Encourage ANSI colors even when stdout is piped.
+                    TERM: process.env.TERM ?? 'xterm-256color',
+                },
             });
 
             this._currentProcess = proc;
@@ -190,6 +195,11 @@ export class ActionsViewModel {
             if (done) break;
 
             pending += decoder.decode(value, { stream: true });
+
+            // Gradle rich console can emit carriage returns for in-place updates.
+            // Normalize them into newlines so output remains readable.
+            pending = pending.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
             const parts = pending.split('\n');
             pending = parts.pop()!;
 

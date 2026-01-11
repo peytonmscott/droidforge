@@ -573,37 +573,69 @@ var init_theme = __esm(() => {
 
 // src/viewmodels/MainMenuViewModel.ts
 class MainMenuViewModel {
-  menuOptions = [
+  forgeMenuOptions = [
     {
-      name: "Actions",
-      description: "will write something creative later",
-      value: "actions"
-    },
-    {
-      name: "Projects",
-      description: "Manage and create new projects with interactive tools",
+      name: "Project Ledger",
+      description: "Find, open, and switch Android projects",
       value: "projects"
     },
     {
-      name: "Gradle",
-      description: "Browse and run Gradle tasks (all + curated)",
-      value: "gradle"
+      name: "Smithy (Devices)",
+      description: "Manage emulators and connected devices",
+      value: "devices"
     },
     {
-      name: "Settings",
-      description: "Configure application preferences and options",
-      value: "settings"
+      name: "Command Tongs (ADB)",
+      description: "Quick ADB actions without the finger burns",
+      value: "adb"
     },
     {
-      name: "About",
-      description: "Learn about Droid Forge and get help",
+      name: "Maker\u2019s Mark",
+      description: "About Droidforge, version, links",
       value: "about"
     }
   ];
-  getMenuOptions() {
-    return [...this.menuOptions];
+  anvilMenuOptions = [
+    {
+      name: "Strike (Run)",
+      description: "Build \u2192 install \u2192 launch \u2192 open Logcat",
+      value: "actionoutputview:installDebug"
+    },
+    {
+      name: "Temper (Build)",
+      description: "Build the project without deploying",
+      value: "actionoutputview:assembleDebug"
+    },
+    {
+      name: "Kiln View (App Logs)",
+      description: "App-focused Logcat (package/PID filtered)",
+      value: "kiln-view"
+    },
+    {
+      name: "Foundry Logs (Device Logs)",
+      description: "Full device Logcat with filters",
+      value: "foundry-logs"
+    },
+    {
+      name: "Looking Glass (Mirror)",
+      description: "Mirror a physical device display",
+      value: "looking-glass"
+    },
+    {
+      name: "Hammer List (Pinned Tasks)",
+      description: "Your most-used Gradle tasks",
+      value: "hammer-list"
+    },
+    {
+      name: "Blueprints (All Tasks)",
+      description: "Browse/search every Gradle task in the project",
+      value: "blueprints"
+    }
+  ];
+  getMenuOptions(mode) {
+    return mode === "anvil" ? [...this.anvilMenuOptions] : [...this.forgeMenuOptions];
   }
-  onMenuItemSelected(index, option) {
+  onMenuItemSelected(_index, option) {
     return option.value;
   }
 }
@@ -966,10 +998,14 @@ class ActionsViewModel {
       return;
     }
     try {
-      const proc = Bun.spawn(["./gradlew", command], {
+      const proc = Bun.spawn(["./gradlew", command, "--console=rich"], {
         cwd,
         stdout: "pipe",
-        stderr: "pipe"
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          TERM: process.env.TERM ?? "xterm-256color"
+        }
       });
       this._currentProcess = proc;
       this.streamOutput(proc.stdout);
@@ -1037,6 +1073,9 @@ class ActionsViewModel {
       if (done)
         break;
       pending += decoder.decode(value, { stream: true });
+      pending = pending.replace(/\r\n/g, `
+`).replace(/\r/g, `
+`);
       const parts = pending.split(`
 `);
       pending = parts.pop();
@@ -1095,9 +1134,12 @@ var init_GradleViewModel = __esm(() => {
     _menuMessage = null;
     _tasks = [];
     _showAllTasks = false;
+    _showToggle = true;
     _tasksLoadPromise = null;
     _onMenuUpdate = null;
-    constructor() {
+    constructor(options = {}) {
+      this._showAllTasks = options.mode === "all";
+      this._showToggle = options.showToggle ?? true;
       this.loadGradleTasks();
     }
     get inlineMessage() {
@@ -1152,16 +1194,20 @@ var init_GradleViewModel = __esm(() => {
           }];
         case "ready": {
           const taskOptions = this._showAllTasks ? this.buildAllTaskOptions() : this.buildCuratedTaskOptions();
-          const toggleOption = this._showAllTasks ? {
-            name: "Show curated tasks",
-            description: "Return to the recommended shortlist",
-            value: SHOW_CURATED_TASKS_VALUE
-          } : {
-            name: "Show all tasks",
-            description: "List every task from `./gradlew tasks --all`",
-            value: SHOW_ALL_TASKS_VALUE
-          };
-          return [...taskOptions, toggleOption];
+          const options = [...taskOptions];
+          if (this._showToggle) {
+            const toggleOption = this._showAllTasks ? {
+              name: "Show curated tasks",
+              description: "Return to the recommended shortlist",
+              value: SHOW_CURATED_TASKS_VALUE
+            } : {
+              name: "Show all tasks",
+              description: "List every task from `./gradlew tasks --all`",
+              value: SHOW_ALL_TASKS_VALUE
+            };
+            options.push(toggleOption);
+          }
+          return options;
         }
       }
     }
@@ -1368,6 +1414,8 @@ function setupDIModules() {
   diContainer.factory("AboutViewModel", () => new AboutViewModel2);
   diContainer.factory("ActionsViewModel", () => new ActionsViewModel2);
   diContainer.factory("GradleViewModel", () => new GradleViewModel2);
+  diContainer.factory("HammerListViewModel", () => new GradleViewModel2({ mode: "curated", showToggle: false }));
+  diContainer.factory("BlueprintsViewModel", () => new GradleViewModel2({ mode: "all", showToggle: false }));
 }
 var diContainer;
 var init_container = __esm(() => {
@@ -1402,12 +1450,7 @@ class NavigationManager {
     this.viewStack = [initialView];
   }
   getInitialView() {
-    const projectDetection = new ProjectDetection;
-    const project = projectDetection.detectAndroidProject(process.cwd());
-    if (project.isAndroidProject) {
-      return "actions";
-    }
-    return "projects";
+    return "menu";
   }
   getCurrentView() {
     return this.currentView;
@@ -1429,7 +1472,6 @@ class NavigationManager {
     return this.viewStack.length > 1;
   }
 }
-var init_navigation = () => {};
 
 // src/utilities/androidProjectName.ts
 import fs6 from "fs";
@@ -1466,15 +1508,253 @@ function projectIdFromPath(projectPath) {
 }
 var init_projectMemory = () => {};
 
+// src/utilities/ansiToStyledText.ts
+import { RGBA, StyledText, TextAttributes, parseColor } from "@opentui/core";
+function chunk(text, state) {
+  const result = {
+    __isChunk: true,
+    text
+  };
+  if (state.fg)
+    result.fg = state.fg;
+  if (state.bg)
+    result.bg = state.bg;
+  if (state.attributes)
+    result.attributes = state.attributes;
+  return result;
+}
+function xterm256ToRgb(index) {
+  const clamped = Math.max(0, Math.min(255, Math.floor(index)));
+  const ansi16 = [
+    [0, 0, 0],
+    [205, 0, 0],
+    [0, 205, 0],
+    [205, 205, 0],
+    [0, 0, 238],
+    [205, 0, 205],
+    [0, 205, 205],
+    [229, 229, 229],
+    [127, 127, 127],
+    [255, 0, 0],
+    [0, 255, 0],
+    [255, 255, 0],
+    [92, 92, 255],
+    [255, 0, 255],
+    [0, 255, 255],
+    [255, 255, 255]
+  ];
+  if (clamped < 16) {
+    const [r, g, b] = ansi16[clamped] ?? [255, 255, 255];
+    return RGBA.fromInts(r, g, b);
+  }
+  if (clamped >= 16 && clamped <= 231) {
+    const idx = clamped - 16;
+    const r = Math.floor(idx / 36);
+    const g = Math.floor(idx % 36 / 6);
+    const b = idx % 6;
+    const steps = [0, 95, 135, 175, 215, 255];
+    return RGBA.fromInts(steps[r], steps[g], steps[b]);
+  }
+  const gray = 8 + (clamped - 232) * 10;
+  return RGBA.fromInts(gray, gray, gray);
+}
+function setColorFromCode(code, state, target) {
+  const mapping = BASIC_COLORS[code] ?? BRIGHT_COLORS[code];
+  if (mapping) {
+    state[target] = parseColor(mapping);
+  }
+}
+function applySgr(paramsRaw, state) {
+  const params = paramsRaw.length ? paramsRaw.split(";").map((p) => Number.parseInt(p, 10)) : [0];
+  for (let i = 0;i < params.length; i++) {
+    const code = params[i] ?? 0;
+    switch (code) {
+      case 0:
+        state.fg = undefined;
+        state.bg = undefined;
+        state.attributes = 0;
+        break;
+      case 1:
+        state.attributes |= TextAttributes.BOLD;
+        break;
+      case 2:
+        state.attributes |= TextAttributes.DIM;
+        break;
+      case 3:
+        state.attributes |= TextAttributes.ITALIC;
+        break;
+      case 4:
+        state.attributes |= TextAttributes.UNDERLINE;
+        break;
+      case 5:
+        state.attributes |= TextAttributes.BLINK;
+        break;
+      case 7:
+        state.attributes |= TextAttributes.INVERSE;
+        break;
+      case 9:
+        state.attributes |= TextAttributes.STRIKETHROUGH;
+        break;
+      case 22:
+        state.attributes &= ~(TextAttributes.BOLD | TextAttributes.DIM);
+        break;
+      case 23:
+        state.attributes &= ~TextAttributes.ITALIC;
+        break;
+      case 24:
+        state.attributes &= ~TextAttributes.UNDERLINE;
+        break;
+      case 25:
+        state.attributes &= ~TextAttributes.BLINK;
+        break;
+      case 27:
+        state.attributes &= ~TextAttributes.INVERSE;
+        break;
+      case 29:
+        state.attributes &= ~TextAttributes.STRIKETHROUGH;
+        break;
+      case 39:
+        state.fg = undefined;
+        break;
+      case 49:
+        state.bg = undefined;
+        break;
+      default:
+        break;
+    }
+    if (code >= 30 && code <= 37) {
+      setColorFromCode(code, state, "fg");
+      continue;
+    }
+    if (code >= 90 && code <= 97) {
+      setColorFromCode(code, state, "fg");
+      continue;
+    }
+    if (code >= 40 && code <= 47) {
+      setColorFromCode(code - 10, state, "bg");
+      continue;
+    }
+    if (code >= 100 && code <= 107) {
+      setColorFromCode(code - 10, state, "bg");
+      continue;
+    }
+    if (code === 38 || code === 48) {
+      const target = code === 38 ? "fg" : "bg";
+      const mode = params[i + 1];
+      if (mode === 2) {
+        const r = params[i + 2];
+        const g = params[i + 3];
+        const b = params[i + 4];
+        if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) {
+          state[target] = RGBA.fromInts(r, g, b);
+          i += 4;
+        }
+        continue;
+      }
+      if (mode === 5) {
+        const idx = params[i + 2];
+        if (Number.isFinite(idx)) {
+          state[target] = xterm256ToRgb(idx);
+          i += 2;
+        }
+        continue;
+      }
+    }
+  }
+}
+function stripUnsupportedEscapes(input2, startIndex) {
+  const esc = input2[startIndex];
+  if (esc !== "\x1B") {
+    return { endIndex: startIndex + 1, sequence: "" };
+  }
+  const next = input2[startIndex + 1];
+  if (!next) {
+    return { endIndex: startIndex + 1, sequence: "" };
+  }
+  if (next === "[") {
+    for (let i = startIndex + 2;i < input2.length; i++) {
+      const code = input2.charCodeAt(i);
+      if (code >= 64 && code <= 126) {
+        return { endIndex: i + 1, sequence: input2.slice(startIndex, i + 1) };
+      }
+    }
+    return { endIndex: input2.length, sequence: input2.slice(startIndex) };
+  }
+  if (next === "]") {
+    for (let i = startIndex + 2;i < input2.length; i++) {
+      const ch = input2[i];
+      if (ch === "\x07") {
+        return { endIndex: i + 1, sequence: input2.slice(startIndex, i + 1) };
+      }
+      if (ch === "\x1B" && input2[i + 1] === "\\") {
+        return { endIndex: i + 2, sequence: input2.slice(startIndex, i + 2) };
+      }
+    }
+    return { endIndex: input2.length, sequence: input2.slice(startIndex) };
+  }
+  return { endIndex: startIndex + 2, sequence: input2.slice(startIndex, startIndex + 2) };
+}
+function ansiToStyledText(input2) {
+  const chunks = [];
+  const state = { attributes: 0 };
+  let buffer = "";
+  function flush() {
+    if (!buffer)
+      return;
+    chunks.push(chunk(buffer, state));
+    buffer = "";
+  }
+  for (let i = 0;i < input2.length; ) {
+    const ch = input2[i];
+    if (ch !== "\x1B") {
+      buffer += ch;
+      i += 1;
+      continue;
+    }
+    flush();
+    const { endIndex, sequence } = stripUnsupportedEscapes(input2, i);
+    if (sequence.startsWith("\x1B[") && sequence.endsWith("m")) {
+      const params = sequence.slice(2, -1);
+      applySgr(params, state);
+    }
+    i = endIndex;
+  }
+  flush();
+  return new StyledText(chunks);
+}
+var BASIC_COLORS, BRIGHT_COLORS;
+var init_ansiToStyledText = __esm(() => {
+  BASIC_COLORS = {
+    30: "black",
+    31: "red",
+    32: "green",
+    33: "yellow",
+    34: "blue",
+    35: "magenta",
+    36: "cyan",
+    37: "white"
+  };
+  BRIGHT_COLORS = {
+    90: "brightBlack",
+    91: "brightRed",
+    92: "brightGreen",
+    93: "brightYellow",
+    94: "brightBlue",
+    95: "brightMagenta",
+    96: "brightCyan",
+    97: "brightWhite"
+  };
+});
+
 // src/utilities/index.ts
 var init_utilities = __esm(() => {
-  init_navigation();
   init_androidProjectName();
   init_projectMemory();
+  init_ansiToStyledText();
 });
 
 // src/ui/components/Header.ts
-import { ASCIIFont, Text, TextAttributes, BoxRenderable } from "@opentui/core";
+import { ASCIIFont, Text, TextAttributes as TextAttributes2, BoxRenderable } from "@opentui/core";
 function MainHeader(renderer, title, subtitle) {
   const headerBox = new BoxRenderable(renderer, {
     id: "main-header-box",
@@ -1485,7 +1765,7 @@ function MainHeader(renderer, title, subtitle) {
   const asciiElement = ASCIIFont({ font: "tiny", text: title });
   headerBox.add(asciiElement);
   if (subtitle) {
-    const textElement = Text({ content: subtitle, attributes: TextAttributes.DIM });
+    const textElement = Text({ content: subtitle, attributes: TextAttributes2.DIM });
     headerBox.add(textElement);
   }
   return headerBox;
@@ -1498,10 +1778,10 @@ function Header(renderer, title, subtitle) {
     marginLeft: 4,
     marginBottom: 1
   });
-  const titleText = Text({ content: title, attributes: TextAttributes.BOLD });
+  const titleText = Text({ content: title, attributes: TextAttributes2.BOLD });
   headerBox.add(titleText);
   if (subtitle) {
-    const subtitleText = Text({ content: subtitle, attributes: TextAttributes.NONE });
+    const subtitleText = Text({ content: subtitle, attributes: TextAttributes2.NONE });
     headerBox.add(subtitleText);
   }
   return headerBox;
@@ -1588,31 +1868,33 @@ var init_components = __esm(() => {
 import { BoxRenderable as BoxRenderable4 } from "@opentui/core";
 function MainMenuView(renderer, viewModel, onNavigate) {
   const detector = new ProjectDetection;
-  const isAndroid = detector.detectAndroidProject(process.cwd());
+  const detection = detector.detectAndroidProject(process.cwd());
+  const mode = detection.isAndroidProject ? "anvil" : "forge";
+  const screenTitle = mode === "anvil" ? "The Anvil" : "Forge";
+  const subtitle = mode === "anvil" ? "Project menu" : "Main menu";
   const menuContainer = new BoxRenderable4(renderer, {
     id: "menu-container",
     alignItems: "center",
     justifyContent: "center",
     flexGrow: 1
   });
-  const header = MainHeader(renderer, "Droid Forge", isAndroid.isAndroidProject.toString() + process.cwd());
+  const header = MainHeader(renderer, screenTitle, subtitle);
   menuContainer.add(header);
   const selectContainer = new BoxRenderable4(renderer, {
     id: "select-container",
-    width: 100,
-    height: 15,
+    width: 120,
+    height: 20,
     border: true,
     borderStyle: "single",
     borderColor: "#475569",
     backgroundColor: "transparent",
-    title: "Main Menu",
-    titleAlignment: "center",
     margin: 2
   });
-  const menuOptions = viewModel.getMenuOptions();
+  const menuOptions = viewModel.getMenuOptions(mode);
   const selectMenu = SelectMenu(renderer, {
     id: "main-menu-select",
     options: menuOptions,
+    height: 18,
     autoFocus: true,
     onSelect: (index, option) => {
       const view = viewModel.onMenuItemSelected(index, option);
@@ -1680,7 +1962,7 @@ function ProjectsView(renderer, viewModel, onNavigate, onSelectCreated) {
     justifyContent: "center",
     flexGrow: 1
   });
-  const header = Header(renderer, "\uD83D\uDCC2 Projects - Create & Manage");
+  const header = Header(renderer, "Project Ledger");
   projectsContainer.add(header);
   const selectContainer = new BoxRenderable6(renderer, {
     id: "select-container",
@@ -1690,7 +1972,7 @@ function ProjectsView(renderer, viewModel, onNavigate, onSelectCreated) {
     borderStyle: "single",
     borderColor: "#475569",
     backgroundColor: "transparent",
-    title: "Projects & Actions",
+    title: "Project Ledger",
     titleAlignment: "center",
     margin: 2
   });
@@ -1823,7 +2105,7 @@ function AboutView(renderer, viewModel) {
     flexDirection: "column",
     flexGrow: 1
   });
-  const header = Header(renderer, "\u2139\uFE0F About - Droid Forge");
+  const header = Header(renderer, "Maker\u2019s Mark");
   aboutContainer.add(header);
   const contentBox = new BoxRenderable9(renderer, {
     id: "about-content",
@@ -1860,7 +2142,7 @@ var init_AboutView = __esm(() => {
 });
 
 // src/ui/view/ActionsView.ts
-import { BoxRenderable as BoxRenderable10, Text as Text8, TextAttributes as TextAttributes3 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable10, Text as Text8, TextAttributes as TextAttributes4 } from "@opentui/core";
 function ActionsView(renderer, viewModel, onNavigate) {
   const container = new BoxRenderable10(renderer, {
     id: "actions-container",
@@ -1908,7 +2190,7 @@ function ActionsView(renderer, viewModel, onNavigate) {
     headerSection.add(Text8({
       id: "actions-message",
       content: message,
-      attributes: TextAttributes3.DIM,
+      attributes: TextAttributes4.DIM,
       margin: 1
     }));
   }
@@ -1932,8 +2214,8 @@ var init_ActionsView = __esm(() => {
 });
 
 // src/ui/view/GradleView.ts
-import { BoxRenderable as BoxRenderable11, Text as Text9, TextAttributes as TextAttributes4 } from "@opentui/core";
-function GradleView(renderer, viewModel, onNavigate) {
+import { BoxRenderable as BoxRenderable11, Text as Text9, TextAttributes as TextAttributes5 } from "@opentui/core";
+function GradleView(renderer, viewModel, onNavigate, titles = { headerTitle: "Gradle Tasks", panelTitle: "Gradle" }) {
   const container = new BoxRenderable11(renderer, {
     id: "gradle-container",
     alignItems: "center",
@@ -1946,7 +2228,7 @@ function GradleView(renderer, viewModel, onNavigate) {
     justifyContent: "flex-start",
     width: 108
   });
-  headerSection.add(Header(renderer, "Gradle Tasks"));
+  headerSection.add(Header(renderer, titles.headerTitle));
   container.add(headerSection);
   const menuPanel = new BoxRenderable11(renderer, {
     id: "gradle-menu-panel",
@@ -1955,7 +2237,7 @@ function GradleView(renderer, viewModel, onNavigate) {
     border: true,
     borderStyle: "single",
     borderColor: "#475569",
-    title: "Gradle",
+    title: titles.panelTitle,
     titleAlignment: "center",
     margin: 2
   });
@@ -1980,7 +2262,7 @@ function GradleView(renderer, viewModel, onNavigate) {
     headerSection.add(Text9({
       id: "gradle-message",
       content: message,
-      attributes: TextAttributes4.DIM,
+      attributes: TextAttributes5.DIM,
       margin: 1
     }));
   }
@@ -2004,7 +2286,10 @@ var init_GradleView = __esm(() => {
 });
 
 // src/ui/view/ActionOutputView.ts
-import { BoxRenderable as BoxRenderable12, Text as Text10, TextAttributes as TextAttributes5 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable12, Text as Text10, TextAttributes as TextAttributes6 } from "@opentui/core";
+function stripAnsi(text) {
+  return text.replace(/\u001b\[[0-9;?]*[@-~]/g, "").replace(/\u001b\][^\u0007]*(\u0007|\u001b\\)/g, "");
+}
 function ActionOutputView(renderer, viewModel, command, onBack) {
   const container = new BoxRenderable12(renderer, {
     id: "action-output-container",
@@ -2027,12 +2312,12 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
   let outputText = Text10({
     id: "output-text",
     content: "",
-    attributes: TextAttributes5.NONE,
+    attributes: TextAttributes6.NONE,
     flexGrow: 1,
     wrapMode: "char"
   });
   outputPanel.add(outputText);
-  let statusBar = Text10({ id: "status-bar", content: "", attributes: TextAttributes5.DIM });
+  let statusBar = Text10({ id: "status-bar", content: "", attributes: TextAttributes6.DIM });
   container.add(outputPanel);
   container.add(statusBar);
   function getVisibleLineCount() {
@@ -2045,9 +2330,9 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
     const visibleLines = output2.lines.slice(output2.scrollOffset, output2.scrollOffset + visibleLineCount);
     outputText = Text10({
       id: "output-text",
-      content: visibleLines.join(`
-`),
-      attributes: TextAttributes5.NONE,
+      content: ansiToStyledText(visibleLines.join(`
+`)),
+      attributes: TextAttributes6.NONE,
       flexGrow: 1,
       wrapMode: "char"
     });
@@ -2062,7 +2347,7 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
     const stateIcon = stateIcons[viewModel.state];
     const exitInfo = output2.exitCode !== null ? ` (exit: ${output2.exitCode})` : "";
     const scrollInfo = `[${output2.scrollOffset + 1}-${Math.min(output2.scrollOffset + visibleLineCount, output2.lines.length)}/${output2.lines.length}]`;
-    const statusColor = viewModel.state === "error" ? TextAttributes5.BOLD : viewModel.state === "completed" ? TextAttributes5.NONE : TextAttributes5.DIM;
+    const statusColor = viewModel.state === "error" ? TextAttributes6.BOLD : viewModel.state === "completed" ? TextAttributes6.NONE : TextAttributes6.DIM;
     statusBar = Text10({
       id: "status-bar",
       content: `${stateIcon} ${viewModel.state}${exitInfo} ${scrollInfo}`,
@@ -2088,7 +2373,7 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
         break;
       case "c":
         if (viewModel.state === "completed" || viewModel.state === "error") {
-          const text = viewModel.getOutputText();
+          const text = stripAnsi(viewModel.getOutputText());
           try {
             Bun.spawn(["pbcopy"], {
               stdin: new Response(text).body
@@ -2096,7 +2381,7 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
             statusBar = Text10({
               id: "status-bar",
               content: "\uD83D\uDCCB Copied to clipboard!",
-              attributes: TextAttributes5.NONE
+              attributes: TextAttributes6.NONE
             });
             container.remove("status-bar");
             container.add(statusBar);
@@ -2119,7 +2404,50 @@ function ActionOutputView(renderer, viewModel, command, onBack) {
   viewModel.runGradleCommand(command);
   return container;
 }
-var init_ActionOutputView = () => {};
+var init_ActionOutputView = __esm(() => {
+  init_utilities();
+});
+
+// src/ui/view/ComingSoonView.ts
+import { BoxRenderable as BoxRenderable13, Text as Text11, TextAttributes as TextAttributes7 } from "@opentui/core";
+function ComingSoonView(renderer, title, description) {
+  const container = new BoxRenderable13(renderer, {
+    id: "coming-soon-container",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    flexGrow: 1
+  });
+  container.add(MainHeader(renderer, title, "Coming soon"));
+  const body = new BoxRenderable13(renderer, {
+    id: "coming-soon-body",
+    width: 120,
+    border: true,
+    borderStyle: "single",
+    borderColor: "#475569",
+    backgroundColor: "transparent",
+    padding: 1,
+    margin: 2
+  });
+  body.add(Text11({
+    id: "coming-soon-description",
+    content: description,
+    attributes: TextAttributes7.NONE,
+    wrapMode: "word"
+  }));
+  body.add(Text11({
+    id: "coming-soon-hint",
+    content: `
+ESC: Back`,
+    attributes: TextAttributes7.DIM,
+    wrapMode: "word"
+  }));
+  container.add(body);
+  return container;
+}
+var init_ComingSoonView = __esm(() => {
+  init_components();
+});
 
 // src/ui/view/index.ts
 var init_view = __esm(() => {
@@ -2132,6 +2460,7 @@ var init_view = __esm(() => {
   init_ActionsView();
   init_GradleView();
   init_ActionOutputView();
+  init_ComingSoonView();
 });
 
 // src/index.ts
@@ -2167,7 +2496,7 @@ function renderCurrentView() {
     const command = currentView.slice(prefix.length);
     const viewModel = diContainer.get("ActionsViewModel");
     const view = ActionOutputView(renderer, viewModel, command, () => {
-      navigation.navigateTo("actions");
+      navigation.goBack();
       renderCurrentView();
     });
     renderer.root.add(view);
@@ -2210,7 +2539,7 @@ function renderCurrentView() {
                 ...project,
                 updatedAt: new Date
               });
-              navigation.navigateTo("actions");
+              navigation.navigateTo("menu");
               renderCurrentView();
             } catch (error) {
               console.error("Failed to open project:", error);
@@ -2243,6 +2572,62 @@ function renderCurrentView() {
         }
         renderCurrentView();
       });
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "hammer-list": {
+      const viewModel = diContainer.get("HammerListViewModel");
+      const view = GradleView(renderer, viewModel, (action) => {
+        navigation.navigateTo(action);
+        renderCurrentView();
+      }, {
+        headerTitle: "Hammer List (Pinned Tasks)",
+        panelTitle: "Pinned Tasks"
+      });
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "blueprints": {
+      const viewModel = diContainer.get("BlueprintsViewModel");
+      const view = GradleView(renderer, viewModel, (action) => {
+        navigation.navigateTo(action);
+        renderCurrentView();
+      }, {
+        headerTitle: "Blueprints (All Tasks)",
+        panelTitle: "All Tasks"
+      });
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "devices": {
+      const view = ComingSoonView(renderer, "Smithy (Devices)", "Manage emulators and connected devices");
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "adb": {
+      const view = ComingSoonView(renderer, "Command Tongs (ADB)", "Quick ADB actions without the finger burns");
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "kiln-view": {
+      const view = ComingSoonView(renderer, "Kiln View (App Logs)", "App-focused Logcat (package/PID filtered)");
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "foundry-logs": {
+      const view = ComingSoonView(renderer, "Foundry Logs (Device Logs)", "Full device Logcat with filters");
+      renderer.root.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "looking-glass": {
+      const view = ComingSoonView(renderer, "Looking Glass (Mirror)", "Mirror a physical device display");
       renderer.root.add(view);
       currentViewElements.push(view);
       break;
@@ -2309,6 +2694,9 @@ var init_src = __esm(async () => {
   renderer.keyInput.on("keypress", (key) => {
     const currentView = navigation.getCurrentView();
     if (key.name === "escape") {
+      if (currentView.startsWith("actionoutputview:")) {
+        return;
+      }
       if (currentView === "projects") {
         const projectsViewModel = diContainer.get("ProjectsViewModel");
         if (projectsViewModel.isConfirmingRemoval()) {

@@ -1,5 +1,3 @@
-import { ProjectDetection } from "./projectDetection";
-
 export class NavigationManager {
     private currentView: string = "menu";
     private viewStack: string[] = ["menu"];
@@ -11,14 +9,8 @@ export class NavigationManager {
     }
 
     getInitialView(): string {
-        const projectDetection = new ProjectDetection();
-        const project = projectDetection.detectAndroidProject(process.cwd());
-
-        if (project.isAndroidProject) {
-            return "actions"; // In Android project → straight to actions
-        }
-
-        return "projects"; // First time → welcome flow
+        // The root screen adapts based on whether we're in a project.
+        return "menu";
     }
 
     getCurrentView(): string {

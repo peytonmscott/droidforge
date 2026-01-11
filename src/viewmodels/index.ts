@@ -1,4 +1,5 @@
 export { MainMenuViewModel } from './MainMenuViewModel';
+export type { RootMenuMode } from './MainMenuViewModel';
 export { DashboardViewModel } from './DashboardViewModel';
 export { ProjectsViewModel } from './ProjectsViewModel';
 export { ToolsViewModel } from './ToolsViewModel';

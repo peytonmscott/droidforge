@@ -17,7 +17,7 @@ export function ProjectsView(
     });
 
     // Header
-    const header = Header(renderer, "📂 Projects - Create & Manage");
+    const header = Header(renderer, "Project Ledger");
     projectsContainer.add(header);
 
     // Create select container
@@ -29,7 +29,7 @@ export function ProjectsView(
         borderStyle: "single",
         borderColor: "#475569",
         backgroundColor: "transparent",
-        title: "Projects & Actions",
+        title: "Project Ledger",
         titleAlignment: "center",
         margin: 2
     });
