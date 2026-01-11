@@ -225,6 +225,9 @@ export class ActionsViewModel {
             if (trimmed.endsWith('UP-TO-DATE')) {
                 return `\x1b[36m${line}\x1b[0m`;
             }
+            if (trimmed.endsWith('FROM-CACHE')) {
+                return `\x1b[36m${line}\x1b[0m`;
+            }
             if (trimmed.endsWith('SKIPPED')) {
                 return `\x1b[90m${line}\x1b[0m`;
             }
@@ -235,6 +238,7 @@ export class ActionsViewModel {
                 return `\x1b[31m${line}\x1b[0m`;
             }
             return `\x1b[32m${line}\x1b[0m`;
+        }
         }
         if (trimmed.startsWith('BUILD SUCCESSFUL')) {
             return `\x1b[1;32m${line}\x1b[0m`;
