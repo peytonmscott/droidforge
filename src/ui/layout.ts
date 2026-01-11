@@ -68,8 +68,15 @@ export function applyCompactMenuLayout(options: {
         options.panel.margin = compact ? 1 : 2;
     }
 
-    if (options.select && typeof options.select.itemSpacing !== "undefined") {
-        options.select.itemSpacing = compact ? 0 : 1;
+    if (options.select) {
+        const compactSpacing = 0.5;
+        const wideSpacing = 1;
+
+        if (typeof options.select.itemSpacing !== "undefined") {
+            options.select.itemSpacing = compact ? compactSpacing : wideSpacing;
+        } else {
+            options.select.itemSpacing = compact ? compactSpacing : wideSpacing;
+        }
     }
 }
 
