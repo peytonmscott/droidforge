@@ -35,7 +35,6 @@ export function ProjectsView(
         autoFocus: true,
         theme,
         selectedIndex: viewModel.getInitialSelectedIndex(),
-        itemSpacing: 0.5,
         onSelect: (index, option) => {
             const action = viewModel.onMenuItemSelected(index, option);
             if (onNavigate) {
