@@ -1,16 +1,18 @@
 import { Text, BoxRenderable } from "@opentui/core";
 import { ToolsViewModel } from '../../viewmodels';
-import { Header, Footer, Panel } from '../components';
+import { Header, Panel } from '../components';
+import type { UiTheme } from '../theme';
 
-export function ToolsView(renderer: any, viewModel: ToolsViewModel): BoxRenderable {
+export function ToolsView(renderer: any, viewModel: ToolsViewModel, theme: UiTheme): BoxRenderable {
     const toolsContainer = new BoxRenderable(renderer, {
         id: "tools-container",
         flexDirection: "column",
         flexGrow: 1,
+        backgroundColor: theme.backgroundColor ?? 'transparent',
     });
 
     // Header
-    const header = Header(renderer, "🔧 Tools - Development Utilities");
+    const header = Header(renderer, "🔧 Tools - Development Utilities", undefined, theme);
     toolsContainer.add(header);
 
     // Main content
@@ -24,7 +26,8 @@ export function ToolsView(renderer: any, viewModel: ToolsViewModel): BoxRenderab
     const leftPanel = Panel(renderer, {
         id: "tools-categories",
         title: "Code Generators",
-        flexGrow: 1
+        flexGrow: 1,
+        theme,
     });
     
     viewModel.getCodeGenerators().forEach(generator => {
@@ -35,7 +38,8 @@ export function ToolsView(renderer: any, viewModel: ToolsViewModel): BoxRenderab
     const rightPanel = Panel(renderer, {
         id: "tools-utilities",
         title: "Utilities",
-        flexGrow: 1
+        flexGrow: 1,
+        theme,
     });
     
     viewModel.getUtilities().forEach(utility => {
@@ -45,10 +49,6 @@ export function ToolsView(renderer: any, viewModel: ToolsViewModel): BoxRenderab
     contentBox.add(leftPanel);
     contentBox.add(rightPanel);
     toolsContainer.add(contentBox);
-
-    // Footer
-    const footer = Footer(renderer, "ESC: Back to Menu | Click tools to use them");
-    toolsContainer.add(footer);
 
     return toolsContainer;
 }

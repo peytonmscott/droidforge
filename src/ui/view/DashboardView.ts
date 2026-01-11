@@ -1,16 +1,18 @@
 import { Text, BoxRenderable } from "@opentui/core";
 import { DashboardViewModel } from '../../viewmodels';
-import { Header, Footer, Panel } from '../components';
+import { Header, Panel } from '../components';
+import type { UiTheme } from '../theme';
 
-export function DashboardView(renderer: any, viewModel: DashboardViewModel): BoxRenderable {
+export function DashboardView(renderer: any, viewModel: DashboardViewModel, theme: UiTheme): BoxRenderable {
     const dashboardContainer = new BoxRenderable(renderer, {
         id: "dashboard-container",
         flexDirection: "column",
         flexGrow: 1,
+        backgroundColor: theme.backgroundColor ?? 'transparent',
     });
 
     // Header
-    const header = Header(renderer, "🏠 Dashboard - Quick Actions");
+    const header = Header(renderer, "🏠 Dashboard - Quick Actions", undefined, theme);
     dashboardContainer.add(header);
 
     // Main content
@@ -24,7 +26,8 @@ export function DashboardView(renderer: any, viewModel: DashboardViewModel): Box
     const leftPanel = Panel(renderer, {
         id: "projects-panel",
         title: "📁 Recent Projects",
-        flexGrow: 1
+        flexGrow: 1,
+        theme,
     });
     
     viewModel.getRecentProjects().forEach(project => {
@@ -35,7 +38,8 @@ export function DashboardView(renderer: any, viewModel: DashboardViewModel): Box
     const rightPanel = Panel(renderer, {
         id: "stats-panel",
         title: "📊 Quick Stats",
-        flexGrow: 1
+        flexGrow: 1,
+        theme,
     });
     
     const stats = viewModel.getQuickStats();
@@ -47,10 +51,6 @@ export function DashboardView(renderer: any, viewModel: DashboardViewModel): Box
     contentBox.add(leftPanel);
     contentBox.add(rightPanel);
     dashboardContainer.add(contentBox);
-
-    // Footer
-    const footer = Footer(renderer, "ESC: Back to Menu | TAB: Navigate | ENTER: Select");
-    dashboardContainer.add(footer);
 
     return dashboardContainer;
 }

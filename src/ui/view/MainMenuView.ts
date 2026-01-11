@@ -2,6 +2,7 @@ import { BoxRenderable } from "@opentui/core";
 import { MainMenuViewModel, type RootMenuMode } from '../../viewmodels';
 import { MainHeader, SelectMenu } from '../components';
 import type { UiTheme } from '../theme';
+import { menuPanelOptions, wireCompactMenuLayout } from '../layout';
 import { ProjectDetection } from "../../utilities/projectDetection";
 
 export function MainMenuView(
@@ -31,23 +32,13 @@ export function MainMenuView(
     menuContainer.add(header);
 
     // Create select container
-    const selectContainer = new BoxRenderable(renderer, {
-        id: "select-container",
-        width: 120,
-        height: 20,
-        border: true,
-        borderStyle: "single",
-        borderColor: theme.borderColor ?? "#475569",
-        backgroundColor: theme.panelBackgroundColor ?? "transparent",
-        margin: 2
-    });
+    const selectContainer = new BoxRenderable(renderer, menuPanelOptions("main-menu-panel", theme));
 
     // Create select menu
     const menuOptions = viewModel.getMenuOptions(mode);
     const selectMenu = SelectMenu(renderer, {
         id: "main-menu-select",
         options: menuOptions,
-        height: 18,
         autoFocus: true,
         theme,
         onSelect: (index, option) => {
@@ -55,6 +46,8 @@ export function MainMenuView(
             onNavigate(view);
         }
     });
+
+    wireCompactMenuLayout(selectContainer, selectMenu);
 
     selectContainer.add(selectMenu);
     menuContainer.add(selectContainer);

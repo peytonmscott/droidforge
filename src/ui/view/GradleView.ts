@@ -2,6 +2,7 @@ import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
 import { GradleViewModel } from '../../viewmodels';
 import { Header, SelectMenu } from '../components';
 import type { UiTheme } from '../theme';
+import { menuHeaderSectionOptions, menuPanelOptions, wireCompactMenuLayout } from '../layout';
 
 export interface GradleViewTitles {
     headerTitle: string;
@@ -24,30 +25,16 @@ export function GradleView(
         backgroundColor: theme.backgroundColor ?? "transparent",
     });
 
-    const headerSection = new BoxRenderable(renderer, {
-        alignItems: "flex-start",
-        justifyContent: "flex-start",
-        width: 108,
-    });
+    const headerSection = new BoxRenderable(renderer, menuHeaderSectionOptions());
 
     headerSection.add(Header(renderer, titles.headerTitle, titles.panelTitle, theme));
     container.add(headerSection);
 
-    const menuPanel = new BoxRenderable(renderer, {
-        id: "gradle-menu-panel",
-        width: 100,
-        height: 20,
-        border: true,
-        borderStyle: "single",
-        borderColor: theme.borderColor ?? "#475569",
-        backgroundColor: theme.panelBackgroundColor ?? "transparent",
-        margin: 2,
-    });
+    const menuPanel = new BoxRenderable(renderer, menuPanelOptions('gradle-menu-panel', theme));
 
     const selectMenu = SelectMenu(renderer, {
         id: "gradle-select",
         options: viewModel.getMenuOptions(),
-        height: 18,
         autoFocus: true,
         theme,
         onSelect: (_index, option) => {
@@ -59,6 +46,8 @@ export function GradleView(
             }
         },
     });
+
+    wireCompactMenuLayout(menuPanel, selectMenu);
 
     function updateInlineMessage(): void {
         const message = viewModel.inlineMessage;

@@ -1,10 +1,12 @@
 import { BoxRenderable } from '@opentui/core';
 
+import { menuHeaderSectionOptions, menuPanelOptions, wireCompactMenuLayout } from '../layout';
+
 import type { MenuOption } from '../../data/schemas';
 import type { SettingsViewModel } from '../../viewmodels';
 import type { UiTheme } from '../theme';
 
-import { Header, Footer, SelectMenu } from '../components';
+import { Header, SelectMenu } from '../components';
 
 export function ThemePickerView(
     renderer: any,
@@ -22,27 +24,14 @@ export function ThemePickerView(
         backgroundColor: theme.backgroundColor ?? 'transparent',
     });
 
-    const headerSection = new BoxRenderable(renderer, {
-        alignItems: 'flex-start',
-        justifyContent: 'flex-start',
-        width: 108,
-    });
+    const headerSection = new BoxRenderable(renderer, menuHeaderSectionOptions());
 
     const modePref = viewModel.getThemeModePreference();
     const effectiveMode = viewModel.getEffectiveThemeMode();
     headerSection.add(Header(renderer, 'Themes', `Mode: ${modePref} (${effectiveMode}) • Current: ${viewModel.getSelectedThemeId()}`, theme));
     container.add(headerSection);
 
-    const panel = new BoxRenderable(renderer, {
-        id: 'theme-menu-panel',
-        width: 100,
-        height: 20,
-        border: true,
-        borderStyle: 'single',
-        borderColor: theme.borderColor ?? '#475569',
-        backgroundColor: theme.panelBackgroundColor ?? 'transparent',
-        margin: 2,
-    });
+    const panel = new BoxRenderable(renderer, menuPanelOptions('theme-menu-panel', theme));
 
     const themes = viewModel.listThemes();
     const selectedId = viewModel.getSelectedThemeId();
@@ -58,7 +47,6 @@ export function ThemePickerView(
     const selectMenu = SelectMenu(renderer, {
         id: 'theme-select',
         options,
-        height: 18,
         selectedIndex: initialIndex,
         theme,
         autoFocus: true,
@@ -68,13 +56,12 @@ export function ThemePickerView(
         },
     });
 
+    wireCompactMenuLayout(panel, selectMenu);
+
     panel.add(selectMenu);
     container.add(panel);
 
     onSelectCreated?.(selectMenu);
-
-    const footer = Footer(renderer, 'ESC: Back | M: Mode | D/L: Set dark/light | R: Reload', theme);
-    container.add(footer);
 
     return container;
 }
