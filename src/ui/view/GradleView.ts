@@ -1,6 +1,7 @@
 import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
 import { GradleViewModel } from '../../viewmodels';
 import { Header, SelectMenu } from '../components';
+import type { UiTheme } from '../theme';
 
 export interface GradleViewTitles {
     headerTitle: string;
@@ -10,6 +11,7 @@ export interface GradleViewTitles {
 export function GradleView(
     renderer: any,
     viewModel: GradleViewModel,
+    theme: UiTheme,
     onNavigate?: (action: string) => void,
     titles: GradleViewTitles = { headerTitle: 'Gradle Tasks', panelTitle: 'Gradle' }
 ): BoxRenderable {
@@ -19,6 +21,7 @@ export function GradleView(
         justifyContent: "center",
         flexDirection: "column",
         flexGrow: 1,
+        backgroundColor: theme.backgroundColor ?? "transparent",
     });
 
     const headerSection = new BoxRenderable(renderer, {
@@ -27,7 +30,7 @@ export function GradleView(
         width: 108,
     });
 
-    headerSection.add(Header(renderer, titles.headerTitle));
+    headerSection.add(Header(renderer, titles.headerTitle, titles.panelTitle, theme));
     container.add(headerSection);
 
     const menuPanel = new BoxRenderable(renderer, {
@@ -36,9 +39,8 @@ export function GradleView(
         height: 20,
         border: true,
         borderStyle: "single",
-        borderColor: "#475569",
-        title: titles.panelTitle,
-        titleAlignment: "center",
+        borderColor: theme.borderColor ?? "#475569",
+        backgroundColor: theme.panelBackgroundColor ?? "transparent",
         margin: 2,
     });
 
@@ -47,6 +49,7 @@ export function GradleView(
         options: viewModel.getMenuOptions(),
         height: 18,
         autoFocus: true,
+        theme,
         onSelect: (_index, option) => {
             const value = typeof option.value === 'string' ? option.value : '';
             const result = viewModel.handleMenuSelection(value);
@@ -67,6 +70,7 @@ export function GradleView(
         headerSection.add(Text({
             id: 'gradle-message',
             content: message,
+            fg: theme.mutedTextColor ?? theme.textColor,
             attributes: TextAttributes.DIM,
             margin: 1,
         }));

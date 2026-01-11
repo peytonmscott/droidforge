@@ -8,3 +8,4 @@ export { ActionsView } from './ActionsView';
 export { GradleView } from './GradleView';
 export { ActionOutputView } from './ActionOutputView';
 export { ComingSoonView } from './ComingSoonView';
+export { ThemePickerView } from './ThemePickerView';

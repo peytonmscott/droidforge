@@ -1,10 +1,12 @@
 import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
 import { ActionsViewModel } from '../../viewmodels';
 import { Header, SelectMenu } from '../components';
+import type { UiTheme } from '../theme';
 
 export function ActionsView(
     renderer: any,
     viewModel: ActionsViewModel,
+    theme: UiTheme,
     onNavigate?: (action: string) => void
 ): BoxRenderable {
     const container = new BoxRenderable(renderer, {
@@ -13,6 +15,7 @@ export function ActionsView(
         justifyContent: "center",
         flexDirection: "column",
         flexGrow: 1,
+        backgroundColor: theme.backgroundColor ?? "transparent",
     });
 
     const headerSection = new BoxRenderable(renderer, {
@@ -21,7 +24,7 @@ export function ActionsView(
         width: 108,
     });
 
-    headerSection.add(Header(renderer, "Actions"));
+    headerSection.add(Header(renderer, "Actions", "Commands", theme));
     container.add(headerSection);
 
     const menuPanel = new BoxRenderable(renderer, {
@@ -30,9 +33,8 @@ export function ActionsView(
         height: 20,
         border: true,
         borderStyle: "single",
-        borderColor: "#475569",
-        title: "Actions",
-        titleAlignment: "center",
+        borderColor: theme.borderColor ?? "#475569",
+        backgroundColor: theme.panelBackgroundColor ?? "transparent",
         margin: 2,
     });
 
@@ -41,6 +43,7 @@ export function ActionsView(
         options: viewModel.getMenuOptions(),
         height: 18,
         autoFocus: true,
+        theme,
         onSelect: (_index, option) => {
             const value = typeof option.value === 'string' ? option.value : '';
             const result = viewModel.handleMenuSelection(value);
@@ -61,6 +64,7 @@ export function ActionsView(
         headerSection.add(Text({
             id: 'actions-message',
             content: message,
+            fg: theme.mutedTextColor ?? theme.textColor,
             attributes: TextAttributes.DIM,
             margin: 1,
         }));

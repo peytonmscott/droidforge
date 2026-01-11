@@ -21,7 +21,10 @@ export function getDefaultConfig(): DroidforgeConfig {
             borderColor: "#475569",
         },
         preferences: {
-            themeMode: 'dark',
+            themeMode: 'system',
+            themeId: 'opencode',
+            themeIdDark: 'opencode',
+            themeIdLight: 'opencode',
             language: 'English',
             autoSave: true,
             notifications: true,

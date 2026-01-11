@@ -1,8 +1,10 @@
 import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
 import { MainHeader } from "../components";
+import type { UiTheme } from "../theme";
 
 export function ComingSoonView(
     renderer: any,
+    theme: UiTheme,
     title: string,
     description: string
 ): BoxRenderable {
@@ -12,17 +14,18 @@ export function ComingSoonView(
         alignItems: "center",
         justifyContent: "flex-start",
         flexGrow: 1,
+        backgroundColor: theme.backgroundColor ?? "transparent",
     });
 
-    container.add(MainHeader(renderer, title, "Coming soon"));
+    container.add(MainHeader(renderer, title, "Coming soon", theme));
 
     const body = new BoxRenderable(renderer, {
         id: "coming-soon-body",
         width: 120,
         border: true,
         borderStyle: "single",
-        borderColor: "#475569",
-        backgroundColor: "transparent",
+        borderColor: theme.borderColor ?? "#475569",
+        backgroundColor: theme.panelBackgroundColor ?? "transparent",
         padding: 1,
         margin: 2,
     });
@@ -31,6 +34,7 @@ export function ComingSoonView(
         id: "coming-soon-description",
         content: description,
         attributes: TextAttributes.NONE,
+        fg: theme.textColor,
         wrapMode: 'word',
     }));
 
@@ -38,6 +42,7 @@ export function ComingSoonView(
         id: "coming-soon-hint",
         content: "\nESC: Back",
         attributes: TextAttributes.DIM,
+        fg: theme.mutedTextColor,
         wrapMode: 'word',
     }));
 

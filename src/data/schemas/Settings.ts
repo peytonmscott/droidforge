@@ -7,9 +7,11 @@ export interface Theme {
 }
 
 export interface Settings {
-    theme: Theme;
     preferences: {
-        themeMode: 'dark' | 'light';
+        themeMode: 'dark' | 'light' | 'system';
+        themeId: string;
+        themeIdDark: string;
+        themeIdLight: string;
         language: string;
         autoSave: boolean;
         notifications: boolean;

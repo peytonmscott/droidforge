@@ -1,10 +1,12 @@
 import { BoxRenderable } from "@opentui/core";
 import { ProjectsViewModel } from '../../viewmodels';
 import { Header, Footer, SelectMenu } from '../components';
+import type { UiTheme } from '../theme';
 
 export function ProjectsView(
     renderer: any,
     viewModel: ProjectsViewModel,
+    theme: UiTheme,
     onNavigate?: (action: string) => void,
     onSelectCreated?: (select: any) => void
 ): BoxRenderable {
@@ -14,10 +16,11 @@ export function ProjectsView(
         alignItems: "center",
         justifyContent: "center",
         flexGrow: 1,
+        backgroundColor: theme.backgroundColor ?? "transparent",
     });
 
     // Header
-    const header = Header(renderer, "Project Ledger");
+    const header = Header(renderer, "Project Ledger", "Projects", theme);
     projectsContainer.add(header);
 
     // Create select container
@@ -27,10 +30,8 @@ export function ProjectsView(
         height: 20,
         border: true,
         borderStyle: "single",
-        borderColor: "#475569",
-        backgroundColor: "transparent",
-        title: "Project Ledger",
-        titleAlignment: "center",
+        borderColor: theme.borderColor ?? "#475569",
+        backgroundColor: theme.panelBackgroundColor ?? "transparent",
         margin: 2
     });
 
@@ -40,6 +41,7 @@ export function ProjectsView(
         options: viewModel.getAllMenuOptions(),
         height: 18,
         autoFocus: true,
+        theme,
         selectedIndex: viewModel.getInitialSelectedIndex(),
         onSelect: (index, option) => {
             const action = viewModel.onMenuItemSelected(index, option);
@@ -56,7 +58,7 @@ export function ProjectsView(
         selectMenu.setSelectedIndex(viewModel.getInitialSelectedIndex());
 
         projectsContainer.remove('footer-box');
-        const footer = Footer(renderer, viewModel.getFooterText());
+        const footer = Footer(renderer, viewModel.getFooterText(), theme);
         projectsContainer.add(footer);
 
         selectMenu.focus();
@@ -68,7 +70,7 @@ export function ProjectsView(
     projectsContainer.add(selectContainer);
 
     // Footer
-    const footer = Footer(renderer, viewModel.getFooterText());
+    const footer = Footer(renderer, viewModel.getFooterText(), theme);
     projectsContainer.add(footer);
 
     return projectsContainer;

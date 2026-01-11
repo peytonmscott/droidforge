@@ -1,5 +1,6 @@
 import { SelectRenderable, SelectRenderableEvents } from "@opentui/core";
 import type { MenuOption } from "../../data/schemas";
+import type { UiTheme } from "../theme";
 
 export interface SelectMenuProps {
     id: string;
@@ -8,6 +9,7 @@ export interface SelectMenuProps {
     selectedIndex?: number;
     onSelect?: (index: number, option: MenuOption) => void;
     autoFocus?: boolean;
+    theme?: UiTheme;
 }
 
 export function SelectMenu(renderer: any, props: SelectMenuProps): SelectRenderable {
@@ -16,13 +18,14 @@ export function SelectMenu(renderer: any, props: SelectMenuProps): SelectRendera
         height: props.height || 12,
         options: props.options,
         selectedIndex: props.selectedIndex ?? 0,
-        backgroundColor: "transparent",
-        focusedBackgroundColor: "transparent",
-        selectedBackgroundColor: "#1E3A5F",
-        textColor: "#E2E8F0",
-        selectedTextColor: "#38BDF8",
-        descriptionColor: "#64748B",
-        selectedDescriptionColor: "#94A3B8",
+        backgroundColor: props.theme?.panelBackgroundColor ?? props.theme?.backgroundColor ?? "transparent",
+        focusedBackgroundColor: props.theme?.panelBackgroundColor ?? props.theme?.backgroundColor ?? "transparent",
+        selectedBackgroundColor: props.theme?.selectedBackgroundColor ?? "#1E3A5F",
+        textColor: props.theme?.textColor ?? "#E2E8F0",
+        focusedTextColor: props.theme?.textColor ?? "#E2E8F0",
+        selectedTextColor: props.theme?.selectedTextColor ?? props.theme?.primaryColor ?? "#38BDF8",
+        descriptionColor: props.theme?.descriptionColor ?? props.theme?.mutedTextColor ?? "#64748B",
+        selectedDescriptionColor: props.theme?.selectedDescriptionColor ?? props.theme?.mutedTextColor ?? "#94A3B8",
         showScrollIndicator: true,
         wrapSelection: true,
         showDescription: true,

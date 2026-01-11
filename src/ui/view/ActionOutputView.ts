@@ -1,6 +1,7 @@
 import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
 import { ActionsViewModel } from '../../viewmodels';
-import { ansiToStyledText } from "../../utilities";
+import { ansiToStyledText, type AnsiPalette } from "../../utilities";
+import type { UiTheme } from "../theme";
 
 function stripAnsi(text: string): string {
     return text
@@ -14,12 +15,24 @@ export function ActionOutputView(
     renderer: any,
     viewModel: ActionsViewModel,
     command: string,
+    theme: UiTheme,
+    ansiPalette: AnsiPalette,
     onBack?: () => void
 ): BoxRenderable {
     const container = new BoxRenderable(renderer, {
         id: "action-output-container",
         flexDirection: "column",
         flexGrow: 1,
+        backgroundColor: theme.backgroundColor ?? "transparent",
+    });
+
+    const executionHeader = Text({
+        id: 'execution-header',
+        content: `Executing: ${command} (j/k: scroll, c: copy, ESC: cancel/back)`,
+        fg: theme.mutedTextColor ?? theme.textColor,
+        attributes: TextAttributes.DIM,
+        margin: 1,
+        wrapMode: 'word',
     });
 
     const outputPanel = new BoxRenderable(renderer, {
@@ -27,9 +40,8 @@ export function ActionOutputView(
         flexGrow: 1,
         border: true,
         borderStyle: "single",
-        borderColor: "#475569",
-        title: `Executing: ${command} (j/k: scroll, c: copy, ESC: cancel/back)`,
-        titleAlignment: "left",
+        borderColor: theme.borderColor ?? "#475569",
+        backgroundColor: theme.panelBackgroundColor ?? "transparent",
         margin: 1,
         onSizeChange: function() {
             viewModel.setOutputWindowSize(Math.max(1, this.height - 2));
@@ -40,6 +52,7 @@ export function ActionOutputView(
         id: "output-text",
         content: "",
         attributes: TextAttributes.NONE,
+        fg: theme.textColor,
         flexGrow: 1,
         wrapMode: 'char',
     });
@@ -47,6 +60,7 @@ export function ActionOutputView(
 
     let statusBar = Text({ id: "status-bar", content: "", attributes: TextAttributes.DIM });
 
+    container.add(executionHeader);
     container.add(outputPanel);
     container.add(statusBar);
 
@@ -67,8 +81,9 @@ export function ActionOutputView(
 
         outputText = Text({
             id: "output-text",
-            content: ansiToStyledText(visibleLines.join('\n')),
+            content: ansiToStyledText(visibleLines.join('\n'), { palette: ansiPalette }),
             attributes: TextAttributes.NONE,
+            fg: theme.textColor,
             flexGrow: 1,
             wrapMode: 'char',
         });
@@ -91,6 +106,7 @@ export function ActionOutputView(
         statusBar = Text({
             id: "status-bar",
             content: `${stateIcon} ${viewModel.state}${exitInfo} ${scrollInfo}`,
+            fg: theme.mutedTextColor ?? theme.textColor,
             attributes: statusColor,
         });
         container.remove('status-bar');
