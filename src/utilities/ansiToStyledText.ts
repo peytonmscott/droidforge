@@ -92,14 +92,22 @@ function xterm256ToRgb(index: number): RGBA {
     return RGBA.fromInts(gray, gray, gray);
 }
 
-function setColorFromCode(code: number, state: SgrState, target: 'fg' | 'bg'): void {
+export type AnsiPalette = Partial<Record<string, RGBA>>;
+
+function setColorFromCode(
+    code: number,
+    state: SgrState,
+    target: 'fg' | 'bg',
+    palette?: AnsiPalette,
+): void {
     const mapping = BASIC_COLORS[code] ?? BRIGHT_COLORS[code];
-    if (mapping) {
-        state[target] = parseColor(mapping);
-    }
+    if (!mapping) return;
+
+    const themed = palette?.[mapping];
+    state[target] = themed ?? parseColor(mapping);
 }
 
-function applySgr(paramsRaw: string, state: SgrState): void {
+function applySgr(paramsRaw: string, state: SgrState, palette?: AnsiPalette): void {
     const params = paramsRaw.length ? paramsRaw.split(';').map((p) => Number.parseInt(p, 10)) : [0];
 
     for (let i = 0; i < params.length; i++) {
@@ -161,22 +169,22 @@ function applySgr(paramsRaw: string, state: SgrState): void {
         }
 
         if (code >= 30 && code <= 37) {
-            setColorFromCode(code, state, 'fg');
+            setColorFromCode(code, state, 'fg', palette);
             continue;
         }
 
         if (code >= 90 && code <= 97) {
-            setColorFromCode(code, state, 'fg');
+            setColorFromCode(code, state, 'fg', palette);
             continue;
         }
 
         if (code >= 40 && code <= 47) {
-            setColorFromCode(code - 10, state, 'bg');
+            setColorFromCode(code - 10, state, 'bg', palette);
             continue;
         }
 
         if (code >= 100 && code <= 107) {
-            setColorFromCode(code - 10, state, 'bg');
+            setColorFromCode(code - 10, state, 'bg', palette);
             continue;
         }
 
@@ -248,7 +256,7 @@ function stripUnsupportedEscapes(input: string, startIndex: number): { endIndex:
     return { endIndex: startIndex + 2, sequence: input.slice(startIndex, startIndex + 2) };
 }
 
-export function ansiToStyledText(input: string): StyledText {
+export function ansiToStyledText(input: string, options: { palette?: AnsiPalette } = {}): StyledText {
     const chunks: TextChunk[] = [];
     const state: SgrState = { attributes: 0 };
 
@@ -275,7 +283,7 @@ export function ansiToStyledText(input: string): StyledText {
 
         if (sequence.startsWith('\u001b[') && sequence.endsWith('m')) {
             const params = sequence.slice(2, -1);
-            applySgr(params, state);
+            applySgr(params, state, options.palette);
         }
 
         i = endIndex;

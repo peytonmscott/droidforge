@@ -1,35 +1,39 @@
+import type { ThemeInfo } from '../ui/theme';
+import type { ThemeModePreference } from '../ui/theme';
 import { ThemeManager } from '../ui/theme';
 
 export class SettingsViewModel {
     constructor(private themeManager: ThemeManager) {}
 
-    getPreferences() {
-        return {
-            theme: "Dark Mode",
-            language: "English", 
-            autoSave: "Enabled",
-            notifications: "On"
-        };
+    listThemes(): ThemeInfo[] {
+        return this.themeManager.listThemes();
     }
 
-    getAdvancedOptions() {
-        return {
-            cache: "Clear cache",
-            data: "Export settings",
-            debug: "Enable logging",
-            reset: "Factory defaults"
-        };
+    getSelectedThemeId(): string {
+        return this.themeManager.getThemeId();
     }
 
-    getCurrentTheme() {
-        return this.themeManager.getCurrentTheme();
+    getThemeModePreference(): ThemeModePreference {
+        return this.themeManager.getThemeModePreference();
     }
 
-    async switchToDarkTheme() {
-        await this.themeManager.updateTheme(this.themeManager.getDarkTheme());
+    getEffectiveThemeMode(): 'dark' | 'light' {
+        return this.themeManager.getEffectiveThemeMode();
     }
 
-    async switchToLightTheme() {
-        await this.themeManager.updateTheme(this.themeManager.getLightTheme());
+    async selectTheme(themeId: string): Promise<void> {
+        await this.themeManager.setTheme(themeId);
+    }
+
+    async selectThemeForMode(themeId: string, mode: 'dark' | 'light'): Promise<void> {
+        await this.themeManager.setThemeForMode(themeId, mode);
+    }
+
+    async setThemeModePreference(mode: ThemeModePreference): Promise<void> {
+        await this.themeManager.setThemeModePreference(mode);
+    }
+
+    async reloadThemes(): Promise<void> {
+        await this.themeManager.reloadThemes();
     }
 }

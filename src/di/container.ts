@@ -41,10 +41,10 @@ class DIContainer {
 export const diContainer = new DIContainer();
 
 // Module definitions (like Koin modules)
-export function setupDIModules() {
-    // Import here to avoid circular deps
-    const { Database, ProjectRepository } = require('../data/repositories');
-    const { ThemeManager } = require('../ui/theme');
+export async function setupDIModules() {
+    // Dynamic imports avoid circular deps and support Bun ESM modules.
+    const { Database, ProjectRepository } = await import('../data/repositories');
+    const { ThemeManager } = await import('../ui/theme');
     const {
         MainMenuViewModel,
         DashboardViewModel,
@@ -53,8 +53,8 @@ export function setupDIModules() {
         SettingsViewModel,
         AboutViewModel,
         ActionsViewModel,
-        GradleViewModel
-    } = require('../viewmodels');
+        GradleViewModel,
+    } = await import('../viewmodels');
 
     // Database singleton
     diContainer.single('Database', () => new Database());

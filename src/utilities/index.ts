@@ -3,3 +3,4 @@ export { NavigationManager } from './navigation';
 export { getAndroidProjectName } from './androidProjectName';
 export { projectIdFromPath, normalizeProjectPath } from './projectMemory';
 export { ansiToStyledText } from './ansiToStyledText';
+export type { AnsiPalette } from './ansiToStyledText';

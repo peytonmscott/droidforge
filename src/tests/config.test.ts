@@ -29,7 +29,7 @@ describe('droidforge.json config', () => {
 
         const loaded = await loadConfig();
         expect(loaded.theme.primaryColor).toBe(config.theme.primaryColor);
-        expect(loaded.preferences.themeMode).toBe('dark');
+        expect(loaded.preferences.themeMode).toBe('system');
     });
 
     test('updates and persists config', async () => {

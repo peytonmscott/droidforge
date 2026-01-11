@@ -15,7 +15,8 @@ import {
     ActionsView,
     GradleView,
     ActionOutputView,
-    ComingSoonView
+    ComingSoonView,
+    ThemePickerView,
 } from './ui/view';
 
 const targetDir = process.argv[2];
@@ -34,7 +35,7 @@ if (detectedRoot) {
 await bootstrap();
 
 // Initialize DI
-setupDIModules();
+await setupDIModules();
 
 async function rememberCurrentAndroidProject(): Promise<void> {
     const detection = projectDetection.detectAndroidProject(process.cwd());
@@ -65,8 +66,29 @@ await rememberCurrentAndroidProject();
 // Get dependencies
 const renderer = await createCliRenderer({ exitOnCtrlC: true });
 const navigation = new NavigationManager();
+const themeManager = diContainer.get('ThemeManager') as any;
 let currentViewElements: any[] = [];
 let currentSelectElement: any = null;
+
+await themeManager.reloadThemes();
+
+function applyThemeToRenderer(): void {
+    try {
+        const theme = themeManager.getTheme();
+        if (theme.backgroundColor && theme.backgroundColor !== 'transparent') {
+            renderer.setBackgroundColor(theme.backgroundColor);
+        }
+    } catch {
+        // ignore
+    }
+}
+
+applyThemeToRenderer();
+
+themeManager.onThemeChange(() => {
+    applyThemeToRenderer();
+    renderCurrentView();
+});
 
 // View rendering function
 function renderCurrentView() {
@@ -75,13 +97,20 @@ function renderCurrentView() {
     currentSelectElement = null;
 
     const currentView = navigation.getCurrentView();
+    const theme = themeManager.getTheme();
+
+    // Keep renderer background consistent even if theme changes.
+    if (theme.backgroundColor && theme.backgroundColor !== 'transparent') {
+        renderer.setBackgroundColor(theme.backgroundColor);
+    }
+    const ansiPalette = themeManager.getAnsiPaletteMap();
 
     if (currentView.startsWith("actionoutputview:")) {
         const prefix = 'actionoutputview:';
         const command = currentView.slice(prefix.length);
 
         const viewModel = diContainer.get('ActionsViewModel') as any;
-        const view = ActionOutputView(renderer, viewModel, command, () => {
+        const view = ActionOutputView(renderer, viewModel, command, theme, ansiPalette, () => {
             navigation.goBack();
             renderCurrentView();
         });
@@ -92,7 +121,7 @@ function renderCurrentView() {
     switch (currentView) {
         case "menu": {
             const viewModel = diContainer.get('MainMenuViewModel') as any;
-            const view = MainMenuView(renderer, viewModel, (view) => {
+            const view = MainMenuView(renderer, viewModel, theme, (view: string) => {
                 navigation.navigateTo(view);
                 renderCurrentView();
             });
@@ -109,7 +138,7 @@ function renderCurrentView() {
         }
         case "projects": {
             const viewModel = diContainer.get('ProjectsViewModel') as any;
-            const view = ProjectsView(renderer, viewModel, (action) => {
+            const view = ProjectsView(renderer, viewModel, theme, (action: string) => {
                 if (action === 'noop') return;
 
                 if (action.startsWith('open-project-')) {
@@ -155,7 +184,7 @@ function renderCurrentView() {
         }
         case "gradle": {
             const viewModel = diContainer.get('GradleViewModel') as any;
-            const view = GradleView(renderer, viewModel, (action) => {
+            const view = GradleView(renderer, viewModel, theme, (action: string) => {
                 if (action === 'back') {
                     navigation.navigateTo('menu');
                 } else {
@@ -169,7 +198,7 @@ function renderCurrentView() {
         }
         case "hammer-list": {
             const viewModel = diContainer.get('HammerListViewModel') as any;
-            const view = GradleView(renderer, viewModel, (action) => {
+            const view = GradleView(renderer, viewModel, theme, (action: string) => {
                 navigation.navigateTo(action);
                 renderCurrentView();
             }, {
@@ -182,7 +211,7 @@ function renderCurrentView() {
         }
         case "blueprints": {
             const viewModel = diContainer.get('BlueprintsViewModel') as any;
-            const view = GradleView(renderer, viewModel, (action) => {
+            const view = GradleView(renderer, viewModel, theme, (action: string) => {
                 navigation.navigateTo(action);
                 renderCurrentView();
             }, {
@@ -196,6 +225,7 @@ function renderCurrentView() {
         case "devices": {
             const view = ComingSoonView(
                 renderer,
+                theme,
                 'Smithy (Devices)',
                 'Manage emulators and connected devices',
             );
@@ -206,6 +236,7 @@ function renderCurrentView() {
         case "adb": {
             const view = ComingSoonView(
                 renderer,
+                theme,
                 'Command Tongs (ADB)',
                 'Quick ADB actions without the finger burns',
             );
@@ -216,6 +247,7 @@ function renderCurrentView() {
         case "kiln-view": {
             const view = ComingSoonView(
                 renderer,
+                theme,
                 'Kiln View (App Logs)',
                 'App-focused Logcat (package/PID filtered)',
             );
@@ -226,6 +258,7 @@ function renderCurrentView() {
         case "foundry-logs": {
             const view = ComingSoonView(
                 renderer,
+                theme,
                 'Foundry Logs (Device Logs)',
                 'Full device Logcat with filters',
             );
@@ -236,6 +269,7 @@ function renderCurrentView() {
         case "looking-glass": {
             const view = ComingSoonView(
                 renderer,
+                theme,
                 'Looking Glass (Mirror)',
                 'Mirror a physical device display',
             );
@@ -252,7 +286,7 @@ function renderCurrentView() {
         }
         case "actions": {
             const viewModel = diContainer.get('ActionsViewModel') as any;
-            const view = ActionsView(renderer, viewModel, (action) => {
+            const view = ActionsView(renderer, viewModel, theme, (action: string) => {
                 if (action === 'back') {
                     navigation.navigateTo('menu');
                 } else {
@@ -266,14 +300,29 @@ function renderCurrentView() {
         }
         case "settings": {
             const viewModel = diContainer.get('SettingsViewModel') as any;
-            const view = SettingsView(renderer, viewModel);
+            const view = SettingsView(renderer, viewModel, theme, () => {
+                navigation.navigateTo('menu');
+                renderCurrentView();
+            });
+            renderer.root.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "themes": {
+            const viewModel = diContainer.get('SettingsViewModel') as any;
+            const view = ThemePickerView(renderer, viewModel, theme, () => {
+                navigation.navigateTo('menu');
+                renderCurrentView();
+            }, (select) => {
+                currentSelectElement = select;
+            });
             renderer.root.add(view);
             currentViewElements.push(view);
             break;
         }
         case "about": {
             const viewModel = diContainer.get('AboutViewModel') as any;
-            const view = AboutView(renderer, viewModel);
+            const view = AboutView(renderer, viewModel, theme);
             renderer.root.add(view);
             currentViewElements.push(view);
             break;
@@ -302,6 +351,41 @@ renderer.keyInput.on("keypress", (key: KeyEvent) => {
             navigation.navigateTo('menu');
             renderCurrentView();
         }
+        return;
+    }
+
+    if (key.name === 't' && !currentView.startsWith('actionoutputview:')) {
+        navigation.navigateTo('themes');
+        renderCurrentView();
+        return;
+    }
+
+    if (currentView === 'themes') {
+        const keyName = (key.name || '').toLowerCase();
+        const settingsViewModel = diContainer.get('SettingsViewModel') as any;
+
+        if (keyName === 'r') {
+            void settingsViewModel.reloadThemes();
+            return;
+        }
+
+        if (keyName === 'm') {
+            const current = settingsViewModel.getThemeModePreference();
+            const next = current === 'dark' ? 'light' : current === 'light' ? 'system' : 'dark';
+            void settingsViewModel.setThemeModePreference(next);
+            return;
+        }
+
+        if (keyName === 'd' || keyName === 'l') {
+            const select = currentSelectElement;
+            const selectedOption = select?.getSelectedOption?.();
+            const selectedValue = typeof selectedOption?.value === 'string' ? selectedOption.value : '';
+            if (selectedValue) {
+                void settingsViewModel.selectThemeForMode(selectedValue, keyName === 'd' ? 'dark' : 'light');
+            }
+            return;
+        }
+
         return;
     }
 
