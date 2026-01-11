@@ -1,4 +1,4 @@
-import { createCliRenderer, type KeyEvent } from "@opentui/core";
+import { createCliRenderer, Text, BoxRenderable, TextAttributes, type KeyEvent } from "@opentui/core";
 import path from 'path';
 
 import { bootstrap } from './bootstrap';
@@ -13,10 +13,9 @@ import {
     SettingsView,
     AboutView,
     ActionsView,
-    GradleView,
     ActionOutputView,
     ComingSoonView,
-    ThemePickerView,
+    GradleView,
 } from './ui/view';
 
 const targetDir = process.argv[2];
@@ -36,6 +35,13 @@ await bootstrap();
 
 // Initialize DI
 await setupDIModules();
+
+const themeManager = diContainer.get('ThemeManager') as any;
+await themeManager.reloadThemes();
+
+themeManager.onThemeChange?.(() => {
+    renderCurrentView();
+});
 
 async function rememberCurrentAndroidProject(): Promise<void> {
     const detection = projectDetection.detectAndroidProject(process.cwd());
@@ -66,29 +72,98 @@ await rememberCurrentAndroidProject();
 // Get dependencies
 const renderer = await createCliRenderer({ exitOnCtrlC: true });
 const navigation = new NavigationManager();
-const themeManager = diContainer.get('ThemeManager') as any;
 let currentViewElements: any[] = [];
 let currentSelectElement: any = null;
 
-await themeManager.reloadThemes();
+// App shell: content area + persistent statusline.
+const appShell = new BoxRenderable(renderer, {
+    id: 'app-shell',
+    flexDirection: 'column',
+    flexGrow: 1,
+    width: '100%',
+    height: '100%',
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+});
 
-function applyThemeToRenderer(): void {
-    try {
-        const theme = themeManager.getTheme();
-        if (theme.backgroundColor && theme.backgroundColor !== 'transparent') {
-            renderer.setBackgroundColor(theme.backgroundColor);
-        }
-    } catch {
-        // ignore
-    }
+const contentHost = new BoxRenderable(renderer, {
+    id: 'content-host',
+    flexDirection: 'column',
+    flexGrow: 1,
+    width: '100%',
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
+});
+
+const statusLine = new BoxRenderable(renderer, {
+    id: 'status-line',
+    height: 1,
+    width: '100%',
+    alignSelf: 'stretch',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+    paddingLeft: 1,
+});
+
+function setStatusLineText(content: string, theme: any): void {
+    const background =
+        theme?.panelBackgroundColor ??
+        theme?.footerBackgroundColor ??
+        theme?.backgroundColor ??
+        '#111827';
+
+    const textColor = theme?.textColor ?? theme?.footerTextColor ?? '#E5E7EB';
+
+    statusLine.backgroundColor = background === 'transparent' ? '#111827' : background;
+
+    const resolvedFg = textColor === 'transparent'
+        ? '#E5E7EB'
+        : textColor === statusLine.backgroundColor
+            ? (theme?.accentColor ?? theme?.primaryColor ?? '#FFFFFF')
+            : textColor;
+
+    statusLine.remove('status-line-text');
+    statusLine.add(Text({
+        id: 'status-line-text',
+        content,
+        fg: resolvedFg,
+        attributes: TextAttributes.BOLD,
+        wrapMode: 'char',
+    }));
 }
 
-applyThemeToRenderer();
+appShell.add(contentHost);
+appShell.add(statusLine);
+renderer.root.add(appShell);
 
-themeManager.onThemeChange(() => {
-    applyThemeToRenderer();
-    renderCurrentView();
-});
+function statusTextForView(view: string): string {
+    if (view.startsWith('actionoutputview:')) {
+        return 'j/k: scroll • c: copy • ESC: cancel/back';
+    }
+
+    switch (view) {
+        case 'menu':
+            return '↑↓: navigate • ENTER: select • CTRL+C: quit';
+        case 'projects': {
+            const vm = diContainer.get('ProjectsViewModel') as any;
+            return vm.getFooterText?.() ?? 'ESC: back';
+        }
+        case 'settings':
+            return 'ESC: back • M: mode • D/L: set dark/light • R: reload';
+        case 'about':
+            return 'ESC: back • T: themes';
+        case 'dashboard':
+            return 'ESC: back • TAB: navigate • ENTER: select';
+        case 'tools':
+            return 'ESC: back';
+        case 'actions':
+        case 'hammer-list':
+        case 'blueprints':
+            return '↑↓: navigate • ENTER: select • ESC: back';
+        default:
+            return 'ESC: back';
+    }
+}
 
 // View rendering function
 function renderCurrentView() {
@@ -98,41 +173,40 @@ function renderCurrentView() {
 
     const currentView = navigation.getCurrentView();
     const theme = themeManager.getTheme();
-
-    // Keep renderer background consistent even if theme changes.
-    if (theme.backgroundColor && theme.backgroundColor !== 'transparent') {
-        renderer.setBackgroundColor(theme.backgroundColor);
-    }
     const ansiPalette = themeManager.getAnsiPaletteMap();
+
+    setStatusLineText(statusTextForView(currentView), theme);
 
     if (currentView.startsWith("actionoutputview:")) {
         const prefix = 'actionoutputview:';
         const command = currentView.slice(prefix.length);
 
         const viewModel = diContainer.get('ActionsViewModel') as any;
-        const view = ActionOutputView(renderer, viewModel, command, theme, ansiPalette, () => {
+        const view = ActionOutputView(renderer, viewModel, command, theme, ansiPalette, (text: string) => {
+            setStatusLineText(text, themeManager.getTheme());
+        }, () => {
             navigation.goBack();
             renderCurrentView();
         });
-        renderer.root.add(view);
+        contentHost.add(view);
         currentViewElements.push(view);
         return;
     }
     switch (currentView) {
         case "menu": {
             const viewModel = diContainer.get('MainMenuViewModel') as any;
-            const view = MainMenuView(renderer, viewModel, theme, (view: string) => {
-                navigation.navigateTo(view);
+            const view = MainMenuView(renderer, viewModel, theme, (nextView: string) => {
+                navigation.navigateTo(nextView);
                 renderCurrentView();
             });
-            renderer.root.add(view);
+            contentHost.add(view);
             currentViewElements.push(view);
             break;
         }
         case "dashboard": {
             const viewModel = diContainer.get('DashboardViewModel') as any;
-            const view = DashboardView(renderer, viewModel);
-            renderer.root.add(view);
+            const view = DashboardView(renderer, viewModel, theme);
+            contentHost.add(view);
             currentViewElements.push(view);
             break;
         }
@@ -157,7 +231,7 @@ function renderCurrentView() {
                                 updatedAt: new Date(),
                             });
 
-                            navigation.navigateTo('menu');
+                            navigation.navigateTo('actions');
                             renderCurrentView();
                         } catch (error) {
                             console.error('Failed to open project:', error);
@@ -177,110 +251,17 @@ function renderCurrentView() {
                 }
             }, (select) => {
                 currentSelectElement = select;
+            }, (text: string) => {
+                setStatusLineText(text, themeManager.getTheme());
             });
-            renderer.root.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "gradle": {
-            const viewModel = diContainer.get('GradleViewModel') as any;
-            const view = GradleView(renderer, viewModel, theme, (action: string) => {
-                if (action === 'back') {
-                    navigation.navigateTo('menu');
-                } else {
-                    navigation.navigateTo(action);
-                }
-                renderCurrentView();
-            });
-            renderer.root.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "hammer-list": {
-            const viewModel = diContainer.get('HammerListViewModel') as any;
-            const view = GradleView(renderer, viewModel, theme, (action: string) => {
-                navigation.navigateTo(action);
-                renderCurrentView();
-            }, {
-                headerTitle: 'Hammer List (Pinned Tasks)',
-                panelTitle: 'Pinned Tasks',
-            });
-            renderer.root.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "blueprints": {
-            const viewModel = diContainer.get('BlueprintsViewModel') as any;
-            const view = GradleView(renderer, viewModel, theme, (action: string) => {
-                navigation.navigateTo(action);
-                renderCurrentView();
-            }, {
-                headerTitle: 'Blueprints (All Tasks)',
-                panelTitle: 'All Tasks',
-            });
-            renderer.root.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "devices": {
-            const view = ComingSoonView(
-                renderer,
-                theme,
-                'Smithy (Devices)',
-                'Manage emulators and connected devices',
-            );
-            renderer.root.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "adb": {
-            const view = ComingSoonView(
-                renderer,
-                theme,
-                'Command Tongs (ADB)',
-                'Quick ADB actions without the finger burns',
-            );
-            renderer.root.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "kiln-view": {
-            const view = ComingSoonView(
-                renderer,
-                theme,
-                'Kiln View (App Logs)',
-                'App-focused Logcat (package/PID filtered)',
-            );
-            renderer.root.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "foundry-logs": {
-            const view = ComingSoonView(
-                renderer,
-                theme,
-                'Foundry Logs (Device Logs)',
-                'Full device Logcat with filters',
-            );
-            renderer.root.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "looking-glass": {
-            const view = ComingSoonView(
-                renderer,
-                theme,
-                'Looking Glass (Mirror)',
-                'Mirror a physical device display',
-            );
-            renderer.root.add(view);
+            contentHost.add(view);
             currentViewElements.push(view);
             break;
         }
         case "tools": {
             const viewModel = diContainer.get('ToolsViewModel') as any;
-            const view = ToolsView(renderer, viewModel);
-            renderer.root.add(view);
+            const view = ToolsView(renderer, viewModel, theme);
+            contentHost.add(view);
             currentViewElements.push(view);
             break;
         }
@@ -294,36 +275,92 @@ function renderCurrentView() {
                 }
                 renderCurrentView();
             });
-            renderer.root.add(view);
+            contentHost.add(view);
             currentViewElements.push(view);
             break;
         }
         case "settings": {
             const viewModel = diContainer.get('SettingsViewModel') as any;
             const view = SettingsView(renderer, viewModel, theme, () => {
-                navigation.navigateTo('menu');
+                navigation.goBack();
                 renderCurrentView();
             });
-            renderer.root.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "themes": {
-            const viewModel = diContainer.get('SettingsViewModel') as any;
-            const view = ThemePickerView(renderer, viewModel, theme, () => {
-                navigation.navigateTo('menu');
-                renderCurrentView();
-            }, (select) => {
-                currentSelectElement = select;
-            });
-            renderer.root.add(view);
+            contentHost.add(view);
             currentViewElements.push(view);
             break;
         }
         case "about": {
             const viewModel = diContainer.get('AboutViewModel') as any;
             const view = AboutView(renderer, viewModel, theme);
-            renderer.root.add(view);
+            contentHost.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "hammer-list": {
+            const viewModel = diContainer.get('HammerListViewModel') as any;
+            const view = GradleView(
+                renderer,
+                viewModel,
+                theme,
+                (action: string) => {
+                    navigation.navigateTo(action);
+                    renderCurrentView();
+                },
+                { headerTitle: 'Hammer List', panelTitle: 'Pinned Gradle Tasks' },
+            );
+            contentHost.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "blueprints": {
+            const viewModel = diContainer.get('BlueprintsViewModel') as any;
+            const view = GradleView(
+                renderer,
+                viewModel,
+                theme,
+                (action: string) => {
+                    navigation.navigateTo(action);
+                    renderCurrentView();
+                },
+                { headerTitle: 'Blueprints', panelTitle: 'All Gradle Tasks' },
+            );
+            contentHost.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "devices": {
+            const view = ComingSoonView(renderer, theme, 'Smithy', 'Device and emulator management is coming soon.');
+            contentHost.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "adb": {
+            const view = ComingSoonView(renderer, theme, 'Command Tongs', 'ADB shortcuts are coming soon.');
+            contentHost.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "kiln-view": {
+            const view = ComingSoonView(renderer, theme, 'Kiln View', 'App-focused Logcat is coming soon.');
+            contentHost.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "foundry-logs": {
+            const view = ComingSoonView(renderer, theme, 'Foundry Logs', 'Full device Logcat browsing is coming soon.');
+            contentHost.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        case "looking-glass": {
+            const view = ComingSoonView(renderer, theme, 'Looking Glass', 'Device mirroring is coming soon.');
+            contentHost.add(view);
+            currentViewElements.push(view);
+            break;
+        }
+        default: {
+            const view = ComingSoonView(renderer, theme, 'Coming soon', `No UI exists yet for: ${currentView}`);
+            contentHost.add(view);
             currentViewElements.push(view);
             break;
         }
@@ -333,12 +370,46 @@ function renderCurrentView() {
 // Handle keyboard navigation
 renderer.keyInput.on("keypress", (key: KeyEvent) => {
     const currentView = navigation.getCurrentView();
+    const keyName = (key.name || '').toLowerCase();
 
-    if (key.name === 'escape') {
-        if (currentView.startsWith('actionoutputview:')) {
+    // ActionOutputView owns key handling (ESC/j/k/c).
+    if (currentView.startsWith('actionoutputview:')) {
+        return;
+    }
+
+    if (currentView === 'about' && keyName === 't') {
+        navigation.navigateTo('settings');
+        renderCurrentView();
+        return;
+    }
+
+    if (currentView === 'settings') {
+        const settingsViewModel = diContainer.get('SettingsViewModel') as any;
+
+        if (keyName === 'r') {
+            void settingsViewModel.reloadThemes().then(renderCurrentView);
             return;
         }
 
+        if (keyName === 'm') {
+            const current = themeManager.getThemeModePreference();
+            const next = current === 'dark' ? 'light' : current === 'light' ? 'system' : 'dark';
+            void settingsViewModel.setThemeModePreference(next).then(renderCurrentView);
+            return;
+        }
+
+        if (keyName === 'd') {
+            void settingsViewModel.selectThemeForMode(themeManager.getThemeId(), 'dark').then(renderCurrentView);
+            return;
+        }
+
+        if (keyName === 'l') {
+            void settingsViewModel.selectThemeForMode(themeManager.getThemeId(), 'light').then(renderCurrentView);
+            return;
+        }
+    }
+
+    if (key.name === 'escape') {
         if (currentView === 'projects') {
             const projectsViewModel = diContainer.get('ProjectsViewModel') as any;
             if (projectsViewModel.isConfirmingRemoval()) {
@@ -348,50 +419,14 @@ renderer.keyInput.on("keypress", (key: KeyEvent) => {
         }
 
         if (currentView !== 'menu') {
-            navigation.navigateTo('menu');
+            navigation.goBack();
             renderCurrentView();
         }
         return;
     }
 
-    if (key.name === 't' && !currentView.startsWith('actionoutputview:')) {
-        navigation.navigateTo('themes');
-        renderCurrentView();
-        return;
-    }
-
-    if (currentView === 'themes') {
-        const keyName = (key.name || '').toLowerCase();
-        const settingsViewModel = diContainer.get('SettingsViewModel') as any;
-
-        if (keyName === 'r') {
-            void settingsViewModel.reloadThemes();
-            return;
-        }
-
-        if (keyName === 'm') {
-            const current = settingsViewModel.getThemeModePreference();
-            const next = current === 'dark' ? 'light' : current === 'light' ? 'system' : 'dark';
-            void settingsViewModel.setThemeModePreference(next);
-            return;
-        }
-
-        if (keyName === 'd' || keyName === 'l') {
-            const select = currentSelectElement;
-            const selectedOption = select?.getSelectedOption?.();
-            const selectedValue = typeof selectedOption?.value === 'string' ? selectedOption.value : '';
-            if (selectedValue) {
-                void settingsViewModel.selectThemeForMode(selectedValue, keyName === 'd' ? 'dark' : 'light');
-            }
-            return;
-        }
-
-        return;
-    }
-
     if (currentView === 'projects') {
         const projectsViewModel = diContainer.get('ProjectsViewModel') as any;
-        const keyName = (key.name || '').toLowerCase();
 
         if (projectsViewModel.isConfirmingRemoval()) {
             if (keyName === 'y') {

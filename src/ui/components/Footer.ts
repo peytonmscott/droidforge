@@ -5,6 +5,8 @@ export function Footer(renderer: any, content: string, theme?: UiTheme): BoxRend
     const footerBox = new BoxRenderable(renderer, {
         id: "footer-box",
         height: 2,
+        width: "100%",
+        alignSelf: "stretch",
         backgroundColor: theme?.footerBackgroundColor ?? theme?.secondaryColor ?? "#1e40af",
         border: true,
         borderStyle: "single",
@@ -16,6 +18,7 @@ export function Footer(renderer: any, content: string, theme?: UiTheme): BoxRend
             content,
             fg: theme?.footerTextColor ?? theme?.textColor ?? "#dbeafe",
             margin: 1,
+            wrapMode: "word",
         }),
     );
 

@@ -8302,14 +8302,30 @@ var init_di = __esm(() => {
 
 // src/utilities/renderer.ts
 function clearCurrentView(renderer, currentViewElements, menuSelect) {
-  currentViewElements.forEach((element) => {
-    if (element && typeof element === "object" && element.id) {
+  for (const element of currentViewElements) {
+    if (!element || typeof element !== "object")
+      continue;
+    try {
+      element.__dispose?.();
+    } catch {}
+    if (typeof element.destroyRecursively === "function") {
+      element.destroyRecursively();
+    } else if (element.id) {
       renderer.root.remove(element.id);
     }
-  });
+  }
   currentViewElements.length = 0;
   if (menuSelect) {
-    menuSelect.destroy();
+    if (typeof menuSelect.__dispose === "function") {
+      try {
+        menuSelect.__dispose();
+      } catch {}
+    }
+    if (typeof menuSelect.destroyRecursively === "function") {
+      menuSelect.destroyRecursively();
+    } else if (typeof menuSelect.destroy === "function") {
+      menuSelect.destroy();
+    }
   }
 }
 
@@ -8684,22 +8700,6 @@ var init_Header = () => {};
 
 // src/ui/components/Footer.ts
 import { Text as Text2, BoxRenderable as BoxRenderable2 } from "@opentui/core";
-function Footer(renderer, content, theme) {
-  const footerBox = new BoxRenderable2(renderer, {
-    id: "footer-box",
-    height: 2,
-    backgroundColor: theme?.footerBackgroundColor ?? theme?.secondaryColor ?? "#1e40af",
-    border: true,
-    borderStyle: "single",
-    borderColor: theme?.footerBorderColor ?? theme?.primaryColor ?? "#1d4ed8"
-  });
-  footerBox.add(Text2({
-    content,
-    fg: theme?.footerTextColor ?? theme?.textColor ?? "#dbeafe",
-    margin: 1
-  }));
-  return footerBox;
-}
 var init_Footer = () => {};
 
 // src/ui/components/Panel.ts
@@ -8727,7 +8727,8 @@ import { SelectRenderable, SelectRenderableEvents } from "@opentui/core";
 function SelectMenu(renderer, props) {
   const select = new SelectRenderable(renderer, {
     id: props.id,
-    height: props.height || 12,
+    height: props.height,
+    flexGrow: props.flexGrow ?? (props.height ? undefined : 1),
     options: props.options,
     selectedIndex: props.selectedIndex ?? 0,
     backgroundColor: props.theme?.panelBackgroundColor ?? props.theme?.backgroundColor ?? "transparent",
@@ -8740,7 +8741,8 @@ function SelectMenu(renderer, props) {
     selectedDescriptionColor: props.theme?.selectedDescriptionColor ?? props.theme?.mutedTextColor ?? "#94A3B8",
     showScrollIndicator: true,
     wrapSelection: true,
-    showDescription: true
+    showDescription: props.showDescription ?? true,
+    itemSpacing: props.itemSpacing
   });
   if (props.onSelect) {
     select.on(SelectRenderableEvents.ITEM_SELECTED, props.onSelect);
@@ -8760,15 +8762,71 @@ var init_components = __esm(() => {
   init_SelectMenu();
 });
 
-// src/ui/view/MainMenuView.ts
+// src/ui/layout.ts
 import { BoxRenderable as BoxRenderable4 } from "@opentui/core";
+function menuHeaderSectionOptions() {
+  return {
+    width: MENU_PANEL_WIDTH,
+    maxWidth: MENU_PANEL_MAX_WIDTH,
+    minWidth: MENU_PANEL_MIN_WIDTH,
+    alignItems: "flex-start",
+    justifyContent: "flex-start",
+    flexShrink: 0
+  };
+}
+function menuPanelOptions(id, theme, overrides = {}) {
+  return {
+    id,
+    width: MENU_PANEL_WIDTH,
+    maxWidth: MENU_PANEL_MAX_WIDTH,
+    minWidth: MENU_PANEL_MIN_WIDTH,
+    flexGrow: 1,
+    maxHeight: MENU_PANEL_MAX_HEIGHT,
+    minHeight: MENU_PANEL_MIN_HEIGHT,
+    border: true,
+    borderStyle: "single",
+    borderColor: theme.borderColor ?? "#475569",
+    backgroundColor: theme.panelBackgroundColor ?? "transparent",
+    margin: 2,
+    ...overrides
+  };
+}
+function applyCompactMenuLayout(options) {
+  const width = options.panel?.width ?? 0;
+  const compact = options.force ?? (width > 0 && width < COMPACT_WIDTH_THRESHOLD);
+  if (options.select && typeof options.select.showDescription !== "undefined") {
+    options.select.showDescription = !compact;
+  }
+  if (options.panel) {
+    options.panel.margin = compact ? 1 : 2;
+  }
+  if (options.select && typeof options.select.itemSpacing !== "undefined") {
+    options.select.itemSpacing = compact ? 0 : 1;
+  }
+}
+function wireCompactMenuLayout(panel, select) {
+  const update = function() {
+    applyCompactMenuLayout({ panel: this, select });
+  };
+  panel.onSizeChange = update;
+  queueMicrotask(() => {
+    try {
+      applyCompactMenuLayout({ panel, select });
+    } catch {}
+  });
+}
+var MENU_PANEL_MAX_WIDTH = 96, MENU_PANEL_MIN_WIDTH = 40, MENU_PANEL_WIDTH = "85%", MENU_PANEL_MAX_HEIGHT = 20, MENU_PANEL_MIN_HEIGHT = 8, COMPACT_WIDTH_THRESHOLD = 70;
+var init_layout = () => {};
+
+// src/ui/view/MainMenuView.ts
+import { BoxRenderable as BoxRenderable5 } from "@opentui/core";
 function MainMenuView(renderer, viewModel, theme, onNavigate) {
   const detector = new ProjectDetection;
   const detection = detector.detectAndroidProject(process.cwd());
   const mode = detection.isAndroidProject ? "anvil" : "forge";
   const screenTitle = mode === "anvil" ? "The Anvil" : "Forge";
   const subtitle = mode === "anvil" ? "Project menu" : "Main menu";
-  const menuContainer = new BoxRenderable4(renderer, {
+  const menuContainer = new BoxRenderable5(renderer, {
     id: "menu-container",
     alignItems: "center",
     justifyContent: "center",
@@ -8777,21 +8835,11 @@ function MainMenuView(renderer, viewModel, theme, onNavigate) {
   });
   const header = MainHeader(renderer, screenTitle, subtitle, theme);
   menuContainer.add(header);
-  const selectContainer = new BoxRenderable4(renderer, {
-    id: "select-container",
-    width: 120,
-    height: 20,
-    border: true,
-    borderStyle: "single",
-    borderColor: theme.borderColor ?? "#475569",
-    backgroundColor: theme.panelBackgroundColor ?? "transparent",
-    margin: 2
-  });
+  const selectContainer = new BoxRenderable5(renderer, menuPanelOptions("main-menu-panel", theme));
   const menuOptions = viewModel.getMenuOptions(mode);
   const selectMenu = SelectMenu(renderer, {
     id: "main-menu-select",
     options: menuOptions,
-    height: 18,
     autoFocus: true,
     theme,
     onSelect: (index, option) => {
@@ -8799,25 +8847,28 @@ function MainMenuView(renderer, viewModel, theme, onNavigate) {
       onNavigate(view);
     }
   });
+  wireCompactMenuLayout(selectContainer, selectMenu);
   selectContainer.add(selectMenu);
   menuContainer.add(selectContainer);
   return menuContainer;
 }
 var init_MainMenuView = __esm(() => {
   init_components();
+  init_layout();
 });
 
 // src/ui/view/DashboardView.ts
-import { Text as Text3, BoxRenderable as BoxRenderable5 } from "@opentui/core";
-function DashboardView(renderer, viewModel) {
-  const dashboardContainer = new BoxRenderable5(renderer, {
+import { Text as Text3, BoxRenderable as BoxRenderable6 } from "@opentui/core";
+function DashboardView(renderer, viewModel, theme) {
+  const dashboardContainer = new BoxRenderable6(renderer, {
     id: "dashboard-container",
     flexDirection: "column",
-    flexGrow: 1
+    flexGrow: 1,
+    backgroundColor: theme.backgroundColor ?? "transparent"
   });
-  const header = Header(renderer, "\uD83C\uDFE0 Dashboard - Quick Actions");
+  const header = Header(renderer, "\uD83C\uDFE0 Dashboard - Quick Actions", undefined, theme);
   dashboardContainer.add(header);
-  const contentBox = new BoxRenderable5(renderer, {
+  const contentBox = new BoxRenderable6(renderer, {
     id: "dashboard-content",
     flexDirection: "row",
     flexGrow: 1
@@ -8825,7 +8876,8 @@ function DashboardView(renderer, viewModel) {
   const leftPanel = Panel(renderer, {
     id: "projects-panel",
     title: "\uD83D\uDCC1 Recent Projects",
-    flexGrow: 1
+    flexGrow: 1,
+    theme
   });
   viewModel.getRecentProjects().forEach((project) => {
     leftPanel.add(Text3({ content: `\u2022 ${project}`, margin: 1 }));
@@ -8833,7 +8885,8 @@ function DashboardView(renderer, viewModel) {
   const rightPanel = Panel(renderer, {
     id: "stats-panel",
     title: "\uD83D\uDCCA Quick Stats",
-    flexGrow: 1
+    flexGrow: 1,
+    theme
   });
   const stats = viewModel.getQuickStats();
   rightPanel.add(Text3({ content: `Projects: ${stats.projects}`, margin: 1 }));
@@ -8843,8 +8896,6 @@ function DashboardView(renderer, viewModel) {
   contentBox.add(leftPanel);
   contentBox.add(rightPanel);
   dashboardContainer.add(contentBox);
-  const footer = Footer(renderer, "ESC: Back to Menu | TAB: Navigate | ENTER: Select");
-  dashboardContainer.add(footer);
   return dashboardContainer;
 }
 var init_DashboardView = __esm(() => {
@@ -8852,9 +8903,9 @@ var init_DashboardView = __esm(() => {
 });
 
 // src/ui/view/ProjectsView.ts
-import { BoxRenderable as BoxRenderable6 } from "@opentui/core";
-function ProjectsView(renderer, viewModel, theme, onNavigate, onSelectCreated) {
-  const projectsContainer = new BoxRenderable6(renderer, {
+import { BoxRenderable as BoxRenderable7 } from "@opentui/core";
+function ProjectsView(renderer, viewModel, theme, onNavigate, onSelectCreated, onStatusText) {
+  const projectsContainer = new BoxRenderable7(renderer, {
     id: "projects-container",
     alignItems: "center",
     justifyContent: "center",
@@ -8863,20 +8914,10 @@ function ProjectsView(renderer, viewModel, theme, onNavigate, onSelectCreated) {
   });
   const header = Header(renderer, "Project Ledger", "Projects", theme);
   projectsContainer.add(header);
-  const selectContainer = new BoxRenderable6(renderer, {
-    id: "select-container",
-    width: 120,
-    height: 20,
-    border: true,
-    borderStyle: "single",
-    borderColor: theme.borderColor ?? "#475569",
-    backgroundColor: theme.panelBackgroundColor ?? "transparent",
-    margin: 2
-  });
+  const selectContainer = new BoxRenderable7(renderer, menuPanelOptions("projects-panel", theme));
   const selectMenu = SelectMenu(renderer, {
     id: "projects-select",
     options: viewModel.getAllMenuOptions(),
-    height: 18,
     autoFocus: true,
     theme,
     selectedIndex: viewModel.getInitialSelectedIndex(),
@@ -8887,37 +8928,37 @@ function ProjectsView(renderer, viewModel, theme, onNavigate, onSelectCreated) {
       }
     }
   });
+  wireCompactMenuLayout(selectContainer, selectMenu);
   onSelectCreated?.(selectMenu);
   function refreshMenu() {
     selectMenu.options = viewModel.getAllMenuOptions();
     selectMenu.setSelectedIndex(viewModel.getInitialSelectedIndex());
-    projectsContainer.remove("footer-box");
-    const footer2 = Footer(renderer, viewModel.getFooterText(), theme);
-    projectsContainer.add(footer2);
+    onStatusText?.(viewModel.getFooterText());
     selectMenu.focus();
   }
   viewModel.setMenuUpdateCallback(refreshMenu);
   selectContainer.add(selectMenu);
   projectsContainer.add(selectContainer);
-  const footer = Footer(renderer, viewModel.getFooterText(), theme);
-  projectsContainer.add(footer);
+  onStatusText?.(viewModel.getFooterText());
   return projectsContainer;
 }
 var init_ProjectsView = __esm(() => {
   init_components();
+  init_layout();
 });
 
 // src/ui/view/ToolsView.ts
-import { Text as Text4, BoxRenderable as BoxRenderable7 } from "@opentui/core";
-function ToolsView(renderer, viewModel) {
-  const toolsContainer = new BoxRenderable7(renderer, {
+import { Text as Text4, BoxRenderable as BoxRenderable8 } from "@opentui/core";
+function ToolsView(renderer, viewModel, theme) {
+  const toolsContainer = new BoxRenderable8(renderer, {
     id: "tools-container",
     flexDirection: "column",
-    flexGrow: 1
+    flexGrow: 1,
+    backgroundColor: theme.backgroundColor ?? "transparent"
   });
-  const header = Header(renderer, "\uD83D\uDD27 Tools - Development Utilities");
+  const header = Header(renderer, "\uD83D\uDD27 Tools - Development Utilities", undefined, theme);
   toolsContainer.add(header);
-  const contentBox = new BoxRenderable7(renderer, {
+  const contentBox = new BoxRenderable8(renderer, {
     id: "tools-content",
     flexDirection: "row",
     flexGrow: 1
@@ -8925,7 +8966,8 @@ function ToolsView(renderer, viewModel) {
   const leftPanel = Panel(renderer, {
     id: "tools-categories",
     title: "Code Generators",
-    flexGrow: 1
+    flexGrow: 1,
+    theme
   });
   viewModel.getCodeGenerators().forEach((generator) => {
     leftPanel.add(Text4({ content: `\u2022 ${generator}`, margin: 1 }));
@@ -8933,7 +8975,8 @@ function ToolsView(renderer, viewModel) {
   const rightPanel = Panel(renderer, {
     id: "tools-utilities",
     title: "Utilities",
-    flexGrow: 1
+    flexGrow: 1,
+    theme
   });
   viewModel.getUtilities().forEach((utility) => {
     rightPanel.add(Text4({ content: `\u2022 ${utility}`, margin: 1 }));
@@ -8941,8 +8984,6 @@ function ToolsView(renderer, viewModel) {
   contentBox.add(leftPanel);
   contentBox.add(rightPanel);
   toolsContainer.add(contentBox);
-  const footer = Footer(renderer, "ESC: Back to Menu | Click tools to use them");
-  toolsContainer.add(footer);
   return toolsContainer;
 }
 var init_ToolsView = __esm(() => {
@@ -8950,9 +8991,9 @@ var init_ToolsView = __esm(() => {
 });
 
 // src/ui/view/ThemePickerView.ts
-import { BoxRenderable as BoxRenderable8 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable9 } from "@opentui/core";
 function ThemePickerView(renderer, viewModel, theme, onBack, onSelectCreated) {
-  const container = new BoxRenderable8(renderer, {
+  const container = new BoxRenderable9(renderer, {
     id: "theme-picker-container",
     alignItems: "center",
     justifyContent: "center",
@@ -8960,26 +9001,12 @@ function ThemePickerView(renderer, viewModel, theme, onBack, onSelectCreated) {
     flexGrow: 1,
     backgroundColor: theme.backgroundColor ?? "transparent"
   });
-  const headerSection = new BoxRenderable8(renderer, {
-    alignItems: "flex-start",
-    justifyContent: "flex-start",
-    width: 108
-  });
+  const headerSection = new BoxRenderable9(renderer, menuHeaderSectionOptions());
   const modePref = viewModel.getThemeModePreference();
   const effectiveMode = viewModel.getEffectiveThemeMode();
   headerSection.add(Header(renderer, "Themes", `Mode: ${modePref} (${effectiveMode}) \u2022 Current: ${viewModel.getSelectedThemeId()}`, theme));
-  headerSection.add(Header(renderer, "Colorschemes", undefined, theme));
   container.add(headerSection);
-  const panel = new BoxRenderable8(renderer, {
-    id: "theme-menu-panel",
-    width: 100,
-    height: 20,
-    border: true,
-    borderStyle: "single",
-    borderColor: theme.borderColor ?? "#475569",
-    backgroundColor: theme.panelBackgroundColor ?? "transparent",
-    margin: 2
-  });
+  const panel = new BoxRenderable9(renderer, menuPanelOptions("theme-menu-panel", theme));
   const themes = viewModel.listThemes();
   const selectedId = viewModel.getSelectedThemeId();
   const options = themes.map((entry) => ({
@@ -8991,7 +9018,6 @@ function ThemePickerView(renderer, viewModel, theme, onBack, onSelectCreated) {
   const selectMenu = SelectMenu(renderer, {
     id: "theme-select",
     options,
-    height: 18,
     selectedIndex: initialIndex,
     theme,
     autoFocus: true,
@@ -9000,14 +9026,14 @@ function ThemePickerView(renderer, viewModel, theme, onBack, onSelectCreated) {
       viewModel.selectTheme(themeId);
     }
   });
+  wireCompactMenuLayout(panel, selectMenu);
   panel.add(selectMenu);
   container.add(panel);
   onSelectCreated?.(selectMenu);
-  const footer = Footer(renderer, "ESC: Back | M: Mode | D/L: Set dark/light | R: Reload", theme);
-  container.add(footer);
   return container;
 }
 var init_ThemePickerView = __esm(() => {
+  init_layout();
   init_components();
 });
 
@@ -9020,9 +9046,9 @@ var init_SettingsView = __esm(() => {
 });
 
 // src/ui/view/AboutView.ts
-import { Text as Text5, BoxRenderable as BoxRenderable9, ASCIIFont as ASCIIFont2 } from "@opentui/core";
+import { Text as Text5, BoxRenderable as BoxRenderable10, ASCIIFont as ASCIIFont2 } from "@opentui/core";
 function AboutView(renderer, viewModel, theme) {
-  const aboutContainer = new BoxRenderable9(renderer, {
+  const aboutContainer = new BoxRenderable10(renderer, {
     id: "about-container",
     flexDirection: "column",
     flexGrow: 1,
@@ -9030,13 +9056,13 @@ function AboutView(renderer, viewModel, theme) {
   });
   const header = Header(renderer, "Maker\u2019s Mark", undefined, theme);
   aboutContainer.add(header);
-  const contentBox = new BoxRenderable9(renderer, {
+  const contentBox = new BoxRenderable10(renderer, {
     id: "about-content",
     alignItems: "center",
     justifyContent: "center",
     flexGrow: 1
   });
-  const infoBox = new BoxRenderable9(renderer, {
+  const infoBox = new BoxRenderable10(renderer, {
     id: "info-box",
     flexDirection: "column",
     alignItems: "center",
@@ -9056,8 +9082,6 @@ function AboutView(renderer, viewModel, theme) {
   });
   contentBox.add(infoBox);
   aboutContainer.add(contentBox);
-  const footer = Footer(renderer, "ESC: Back to Menu | T: Themes", theme);
-  aboutContainer.add(footer);
   return aboutContainer;
 }
 var init_AboutView = __esm(() => {
@@ -9065,9 +9089,9 @@ var init_AboutView = __esm(() => {
 });
 
 // src/ui/view/ActionsView.ts
-import { BoxRenderable as BoxRenderable10, Text as Text6, TextAttributes as TextAttributes4 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable11, Text as Text6, TextAttributes as TextAttributes4 } from "@opentui/core";
 function ActionsView(renderer, viewModel, theme, onNavigate) {
-  const container = new BoxRenderable10(renderer, {
+  const container = new BoxRenderable11(renderer, {
     id: "actions-container",
     alignItems: "center",
     justifyContent: "center",
@@ -9075,27 +9099,13 @@ function ActionsView(renderer, viewModel, theme, onNavigate) {
     flexGrow: 1,
     backgroundColor: theme.backgroundColor ?? "transparent"
   });
-  const headerSection = new BoxRenderable10(renderer, {
-    alignItems: "flex-start",
-    justifyContent: "flex-start",
-    width: 108
-  });
+  const headerSection = new BoxRenderable11(renderer, menuHeaderSectionOptions());
   headerSection.add(Header(renderer, "Actions", "Commands", theme));
   container.add(headerSection);
-  const menuPanel = new BoxRenderable10(renderer, {
-    id: "menu-panel",
-    width: 100,
-    height: 20,
-    border: true,
-    borderStyle: "single",
-    borderColor: theme.borderColor ?? "#475569",
-    backgroundColor: theme.panelBackgroundColor ?? "transparent",
-    margin: 2
-  });
+  const menuPanel = new BoxRenderable11(renderer, menuPanelOptions("actions-panel", theme));
   const selectMenu = SelectMenu(renderer, {
     id: "actions-select",
     options: viewModel.getMenuOptions(),
-    height: 18,
     autoFocus: true,
     theme,
     onSelect: (_index, option) => {
@@ -9106,6 +9116,7 @@ function ActionsView(renderer, viewModel, theme, onNavigate) {
       }
     }
   });
+  wireCompactMenuLayout(menuPanel, selectMenu);
   function updateInlineMessage() {
     const message = viewModel.inlineMessage;
     headerSection.remove("actions-message");
@@ -9124,7 +9135,7 @@ function ActionsView(renderer, viewModel, theme, onNavigate) {
     updateInlineMessage();
   }
   viewModel.setMenuUpdateCallback(refreshMenu);
-  const menuSection = new BoxRenderable10(renderer, {
+  const menuSection = new BoxRenderable11(renderer, {
     alignItems: "center",
     justifyContent: "center"
   });
@@ -9136,12 +9147,13 @@ function ActionsView(renderer, viewModel, theme, onNavigate) {
 }
 var init_ActionsView = __esm(() => {
   init_components();
+  init_layout();
 });
 
 // src/ui/view/GradleView.ts
-import { BoxRenderable as BoxRenderable11, Text as Text7, TextAttributes as TextAttributes5 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable12, Text as Text7, TextAttributes as TextAttributes5 } from "@opentui/core";
 function GradleView(renderer, viewModel, theme, onNavigate, titles = { headerTitle: "Gradle Tasks", panelTitle: "Gradle" }) {
-  const container = new BoxRenderable11(renderer, {
+  const container = new BoxRenderable12(renderer, {
     id: "gradle-container",
     alignItems: "center",
     justifyContent: "center",
@@ -9149,27 +9161,13 @@ function GradleView(renderer, viewModel, theme, onNavigate, titles = { headerTit
     flexGrow: 1,
     backgroundColor: theme.backgroundColor ?? "transparent"
   });
-  const headerSection = new BoxRenderable11(renderer, {
-    alignItems: "flex-start",
-    justifyContent: "flex-start",
-    width: 108
-  });
+  const headerSection = new BoxRenderable12(renderer, menuHeaderSectionOptions());
   headerSection.add(Header(renderer, titles.headerTitle, titles.panelTitle, theme));
   container.add(headerSection);
-  const menuPanel = new BoxRenderable11(renderer, {
-    id: "gradle-menu-panel",
-    width: 100,
-    height: 20,
-    border: true,
-    borderStyle: "single",
-    borderColor: theme.borderColor ?? "#475569",
-    backgroundColor: theme.panelBackgroundColor ?? "transparent",
-    margin: 2
-  });
+  const menuPanel = new BoxRenderable12(renderer, menuPanelOptions("gradle-menu-panel", theme));
   const selectMenu = SelectMenu(renderer, {
     id: "gradle-select",
     options: viewModel.getMenuOptions(),
-    height: 18,
     autoFocus: true,
     theme,
     onSelect: (_index, option) => {
@@ -9180,6 +9178,7 @@ function GradleView(renderer, viewModel, theme, onNavigate, titles = { headerTit
       }
     }
   });
+  wireCompactMenuLayout(menuPanel, selectMenu);
   function updateInlineMessage() {
     const message = viewModel.inlineMessage;
     headerSection.remove("gradle-message");
@@ -9198,7 +9197,7 @@ function GradleView(renderer, viewModel, theme, onNavigate, titles = { headerTit
     updateInlineMessage();
   }
   viewModel.setMenuUpdateCallback(refreshMenu);
-  const menuSection = new BoxRenderable11(renderer, {
+  const menuSection = new BoxRenderable12(renderer, {
     alignItems: "center",
     justifyContent: "center"
   });
@@ -9210,15 +9209,16 @@ function GradleView(renderer, viewModel, theme, onNavigate, titles = { headerTit
 }
 var init_GradleView = __esm(() => {
   init_components();
+  init_layout();
 });
 
 // src/ui/view/ActionOutputView.ts
-import { BoxRenderable as BoxRenderable12, Text as Text8, TextAttributes as TextAttributes6 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable13, Text as Text8, TextAttributes as TextAttributes6 } from "@opentui/core";
 function stripAnsi(text) {
   return text.replace(/\u001b\[[0-9;?]*[@-~]/g, "").replace(/\u001b\][^\u0007]*(\u0007|\u001b\\)/g, "");
 }
-function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, onBack) {
-  const container = new BoxRenderable12(renderer, {
+function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setStatusText, onBack) {
+  const container = new BoxRenderable13(renderer, {
     id: "action-output-container",
     flexDirection: "column",
     flexGrow: 1,
@@ -9226,13 +9226,13 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, onBa
   });
   const executionHeader = Text8({
     id: "execution-header",
-    content: `Executing: ${command} (j/k: scroll, c: copy, ESC: cancel/back)`,
+    content: `Executing: ${command}`,
     fg: theme.mutedTextColor ?? theme.textColor,
     attributes: TextAttributes6.DIM,
     margin: 1,
     wrapMode: "word"
   });
-  const outputPanel = new BoxRenderable12(renderer, {
+  const outputPanel = new BoxRenderable13(renderer, {
     id: "output-panel",
     flexGrow: 1,
     border: true,
@@ -9253,16 +9253,36 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, onBa
     wrapMode: "char"
   });
   outputPanel.add(outputText);
-  let statusBar = Text8({ id: "status-bar", content: "", attributes: TextAttributes6.DIM });
   container.add(executionHeader);
   container.add(outputPanel);
-  container.add(statusBar);
   function getVisibleLineCount() {
     return Math.max(1, outputPanel.height - 2);
   }
+  let liveRequested = false;
+  const ensureLive = () => {
+    if (liveRequested)
+      return;
+    if (typeof renderer.requestLive === "function") {
+      renderer.requestLive();
+    }
+    liveRequested = true;
+  };
+  const dropLive = () => {
+    if (!liveRequested)
+      return;
+    if (typeof renderer.dropLive === "function") {
+      renderer.dropLive();
+    }
+    liveRequested = false;
+  };
   function updateOutput() {
     const output2 = viewModel.output;
     const visibleLineCount = getVisibleLineCount();
+    if (viewModel.state === "running") {
+      ensureLive();
+    } else {
+      dropLive();
+    }
     viewModel.setOutputWindowSize(visibleLineCount);
     const visibleLines = output2.lines.slice(output2.scrollOffset, output2.scrollOffset + visibleLineCount);
     outputText = Text8({
@@ -9285,18 +9305,10 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, onBa
     const stateIcon = stateIcons[viewModel.state];
     const exitInfo = output2.exitCode !== null ? ` (exit: ${output2.exitCode})` : "";
     const scrollInfo = `[${output2.scrollOffset + 1}-${Math.min(output2.scrollOffset + visibleLineCount, output2.lines.length)}/${output2.lines.length}]`;
-    const statusColor = viewModel.state === "error" ? TextAttributes6.BOLD : viewModel.state === "completed" ? TextAttributes6.NONE : TextAttributes6.DIM;
-    statusBar = Text8({
-      id: "status-bar",
-      content: `${stateIcon} ${viewModel.state}${exitInfo} ${scrollInfo}`,
-      fg: theme.mutedTextColor ?? theme.textColor,
-      attributes: statusColor
-    });
-    container.remove("status-bar");
-    container.add(statusBar);
+    setStatusText?.(`${stateIcon} ${viewModel.state}${exitInfo} ${scrollInfo} \u2022 j/k: scroll \u2022 c: copy \u2022 ESC: cancel/back`);
   }
   viewModel.setOutputUpdateCallback(updateOutput);
-  renderer.keyInput.on("keypress", (key) => {
+  const keyHandler = (key) => {
     switch (key.name) {
       case "j":
       case "down":
@@ -9317,13 +9329,7 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, onBa
             Bun.spawn(["pbcopy"], {
               stdin: new Response(text).body
             });
-            statusBar = Text8({
-              id: "status-bar",
-              content: "\uD83D\uDCCB Copied to clipboard!",
-              attributes: TextAttributes6.NONE
-            });
-            container.remove("status-bar");
-            container.add(statusBar);
+            setStatusText?.("\uD83D\uDCCB Copied to clipboard!");
             setTimeout(updateOutput, 1500);
           } catch {}
         }
@@ -9338,7 +9344,21 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, onBa
         }
         break;
     }
-  });
+  };
+  renderer.keyInput.on("keypress", keyHandler);
+  container.__dispose = () => {
+    dropLive();
+    if (typeof renderer.keyInput.off === "function") {
+      renderer.keyInput.off("keypress", keyHandler);
+    } else if (typeof renderer.keyInput.removeListener === "function") {
+      renderer.keyInput.removeListener("keypress", keyHandler);
+    }
+    viewModel.setOutputUpdateCallback(() => {
+      return;
+    });
+  };
+  ensureLive();
+  setStatusText?.(`\u23F3 starting \u2022 j/k: scroll \u2022 c: copy \u2022 ESC: cancel/back`);
   viewModel.setOutputWindowSize(getVisibleLineCount());
   viewModel.runGradleCommand(command);
   return container;
@@ -9348,9 +9368,9 @@ var init_ActionOutputView = __esm(() => {
 });
 
 // src/ui/view/ComingSoonView.ts
-import { BoxRenderable as BoxRenderable13, Text as Text9, TextAttributes as TextAttributes7 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable14, Text as Text9, TextAttributes as TextAttributes7 } from "@opentui/core";
 function ComingSoonView(renderer, theme, title, description) {
-  const container = new BoxRenderable13(renderer, {
+  const container = new BoxRenderable14(renderer, {
     id: "coming-soon-container",
     flexDirection: "column",
     alignItems: "center",
@@ -9359,9 +9379,12 @@ function ComingSoonView(renderer, theme, title, description) {
     backgroundColor: theme.backgroundColor ?? "transparent"
   });
   container.add(MainHeader(renderer, title, "Coming soon", theme));
-  const body = new BoxRenderable13(renderer, {
+  const body = new BoxRenderable14(renderer, {
     id: "coming-soon-body",
-    width: 120,
+    width: MENU_PANEL_WIDTH,
+    maxWidth: MENU_PANEL_MAX_WIDTH,
+    minWidth: MENU_PANEL_MIN_WIDTH,
+    flexGrow: 0,
     border: true,
     borderStyle: "single",
     borderColor: theme.borderColor ?? "#475569",
@@ -9376,19 +9399,12 @@ function ComingSoonView(renderer, theme, title, description) {
     fg: theme.textColor,
     wrapMode: "word"
   }));
-  body.add(Text9({
-    id: "coming-soon-hint",
-    content: `
-ESC: Back`,
-    attributes: TextAttributes7.DIM,
-    fg: theme.mutedTextColor,
-    wrapMode: "word"
-  }));
   container.add(body);
   return container;
 }
 var init_ComingSoonView = __esm(() => {
   init_components();
+  init_layout();
 });
 
 // src/ui/view/index.ts
@@ -9408,7 +9424,7 @@ var init_view = __esm(() => {
 
 // src/index.ts
 var exports_src = {};
-import { createCliRenderer } from "@opentui/core";
+import { createCliRenderer, Text as Text10, BoxRenderable as BoxRenderable15, TextAttributes as TextAttributes8 } from "@opentui/core";
 import path8 from "path";
 async function rememberCurrentAndroidProject() {
   const detection = projectDetection.detectAndroidProject(process.cwd());
@@ -9430,50 +9446,83 @@ async function rememberCurrentAndroidProject() {
     updatedAt: now
   });
 }
-function applyThemeToRenderer() {
-  try {
-    const theme = themeManager.getTheme();
-    if (theme.backgroundColor && theme.backgroundColor !== "transparent") {
-      renderer.setBackgroundColor(theme.backgroundColor);
+function setStatusLineText(content, theme) {
+  const background = theme?.panelBackgroundColor ?? theme?.footerBackgroundColor ?? theme?.backgroundColor ?? "#111827";
+  const textColor = theme?.textColor ?? theme?.footerTextColor ?? "#E5E7EB";
+  statusLine.backgroundColor = background === "transparent" ? "#111827" : background;
+  const resolvedFg = textColor === "transparent" ? "#E5E7EB" : textColor === statusLine.backgroundColor ? theme?.accentColor ?? theme?.primaryColor ?? "#FFFFFF" : textColor;
+  statusLine.remove("status-line-text");
+  statusLine.add(Text10({
+    id: "status-line-text",
+    content,
+    fg: resolvedFg,
+    attributes: TextAttributes8.BOLD,
+    wrapMode: "char"
+  }));
+}
+function statusTextForView(view) {
+  if (view.startsWith("actionoutputview:")) {
+    return "j/k: scroll \u2022 c: copy \u2022 ESC: cancel/back";
+  }
+  switch (view) {
+    case "menu":
+      return "\u2191\u2193: navigate \u2022 ENTER: select \u2022 CTRL+C: quit";
+    case "projects": {
+      const vm = diContainer.get("ProjectsViewModel");
+      return vm.getFooterText?.() ?? "ESC: back";
     }
-  } catch {}
+    case "settings":
+      return "ESC: back \u2022 M: mode \u2022 D/L: set dark/light \u2022 R: reload";
+    case "about":
+      return "ESC: back \u2022 T: themes";
+    case "dashboard":
+      return "ESC: back \u2022 TAB: navigate \u2022 ENTER: select";
+    case "tools":
+      return "ESC: back";
+    case "actions":
+    case "hammer-list":
+    case "blueprints":
+      return "\u2191\u2193: navigate \u2022 ENTER: select \u2022 ESC: back";
+    default:
+      return "ESC: back";
+  }
 }
 function renderCurrentView() {
   clearCurrentView(renderer, currentViewElements, currentSelectElement);
   currentSelectElement = null;
   const currentView = navigation.getCurrentView();
   const theme = themeManager.getTheme();
-  if (theme.backgroundColor && theme.backgroundColor !== "transparent") {
-    renderer.setBackgroundColor(theme.backgroundColor);
-  }
   const ansiPalette = themeManager.getAnsiPaletteMap();
+  setStatusLineText(statusTextForView(currentView), theme);
   if (currentView.startsWith("actionoutputview:")) {
     const prefix = "actionoutputview:";
     const command = currentView.slice(prefix.length);
     const viewModel = diContainer.get("ActionsViewModel");
-    const view = ActionOutputView(renderer, viewModel, command, theme, ansiPalette, () => {
+    const view = ActionOutputView(renderer, viewModel, command, theme, ansiPalette, (text) => {
+      setStatusLineText(text, themeManager.getTheme());
+    }, () => {
       navigation.goBack();
       renderCurrentView();
     });
-    renderer.root.add(view);
+    contentHost.add(view);
     currentViewElements.push(view);
     return;
   }
   switch (currentView) {
     case "menu": {
       const viewModel = diContainer.get("MainMenuViewModel");
-      const view = MainMenuView(renderer, viewModel, theme, (view2) => {
-        navigation.navigateTo(view2);
+      const view = MainMenuView(renderer, viewModel, theme, (nextView) => {
+        navigation.navigateTo(nextView);
         renderCurrentView();
       });
-      renderer.root.add(view);
+      contentHost.add(view);
       currentViewElements.push(view);
       break;
     }
     case "dashboard": {
       const viewModel = diContainer.get("DashboardViewModel");
-      const view = DashboardView(renderer, viewModel);
-      renderer.root.add(view);
+      const view = DashboardView(renderer, viewModel, theme);
+      contentHost.add(view);
       currentViewElements.push(view);
       break;
     }
@@ -9495,7 +9544,7 @@ function renderCurrentView() {
                 ...project,
                 updatedAt: new Date
               });
-              navigation.navigateTo("menu");
+              navigation.navigateTo("actions");
               renderCurrentView();
             } catch (error) {
               console.error("Failed to open project:", error);
@@ -9513,85 +9562,17 @@ function renderCurrentView() {
         }
       }, (select) => {
         currentSelectElement = select;
+      }, (text) => {
+        setStatusLineText(text, themeManager.getTheme());
       });
-      renderer.root.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "gradle": {
-      const viewModel = diContainer.get("GradleViewModel");
-      const view = GradleView(renderer, viewModel, theme, (action) => {
-        if (action === "back") {
-          navigation.navigateTo("menu");
-        } else {
-          navigation.navigateTo(action);
-        }
-        renderCurrentView();
-      });
-      renderer.root.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "hammer-list": {
-      const viewModel = diContainer.get("HammerListViewModel");
-      const view = GradleView(renderer, viewModel, theme, (action) => {
-        navigation.navigateTo(action);
-        renderCurrentView();
-      }, {
-        headerTitle: "Hammer List (Pinned Tasks)",
-        panelTitle: "Pinned Tasks"
-      });
-      renderer.root.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "blueprints": {
-      const viewModel = diContainer.get("BlueprintsViewModel");
-      const view = GradleView(renderer, viewModel, theme, (action) => {
-        navigation.navigateTo(action);
-        renderCurrentView();
-      }, {
-        headerTitle: "Blueprints (All Tasks)",
-        panelTitle: "All Tasks"
-      });
-      renderer.root.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "devices": {
-      const view = ComingSoonView(renderer, theme, "Smithy (Devices)", "Manage emulators and connected devices");
-      renderer.root.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "adb": {
-      const view = ComingSoonView(renderer, theme, "Command Tongs (ADB)", "Quick ADB actions without the finger burns");
-      renderer.root.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "kiln-view": {
-      const view = ComingSoonView(renderer, theme, "Kiln View (App Logs)", "App-focused Logcat (package/PID filtered)");
-      renderer.root.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "foundry-logs": {
-      const view = ComingSoonView(renderer, theme, "Foundry Logs (Device Logs)", "Full device Logcat with filters");
-      renderer.root.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "looking-glass": {
-      const view = ComingSoonView(renderer, theme, "Looking Glass (Mirror)", "Mirror a physical device display");
-      renderer.root.add(view);
+      contentHost.add(view);
       currentViewElements.push(view);
       break;
     }
     case "tools": {
       const viewModel = diContainer.get("ToolsViewModel");
-      const view = ToolsView(renderer, viewModel);
-      renderer.root.add(view);
+      const view = ToolsView(renderer, viewModel, theme);
+      contentHost.add(view);
       currentViewElements.push(view);
       break;
     }
@@ -9605,42 +9586,86 @@ function renderCurrentView() {
         }
         renderCurrentView();
       });
-      renderer.root.add(view);
+      contentHost.add(view);
       currentViewElements.push(view);
       break;
     }
     case "settings": {
       const viewModel = diContainer.get("SettingsViewModel");
       const view = SettingsView(renderer, viewModel, theme, () => {
-        navigation.navigateTo("menu");
+        navigation.goBack();
         renderCurrentView();
       });
-      renderer.root.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "themes": {
-      const viewModel = diContainer.get("SettingsViewModel");
-      const view = ThemePickerView(renderer, viewModel, theme, () => {
-        navigation.navigateTo("menu");
-        renderCurrentView();
-      }, (select) => {
-        currentSelectElement = select;
-      });
-      renderer.root.add(view);
+      contentHost.add(view);
       currentViewElements.push(view);
       break;
     }
     case "about": {
       const viewModel = diContainer.get("AboutViewModel");
       const view = AboutView(renderer, viewModel, theme);
-      renderer.root.add(view);
+      contentHost.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "hammer-list": {
+      const viewModel = diContainer.get("HammerListViewModel");
+      const view = GradleView(renderer, viewModel, theme, (action) => {
+        navigation.navigateTo(action);
+        renderCurrentView();
+      }, { headerTitle: "Hammer List", panelTitle: "Pinned Gradle Tasks" });
+      contentHost.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "blueprints": {
+      const viewModel = diContainer.get("BlueprintsViewModel");
+      const view = GradleView(renderer, viewModel, theme, (action) => {
+        navigation.navigateTo(action);
+        renderCurrentView();
+      }, { headerTitle: "Blueprints", panelTitle: "All Gradle Tasks" });
+      contentHost.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "devices": {
+      const view = ComingSoonView(renderer, theme, "Smithy", "Device and emulator management is coming soon.");
+      contentHost.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "adb": {
+      const view = ComingSoonView(renderer, theme, "Command Tongs", "ADB shortcuts are coming soon.");
+      contentHost.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "kiln-view": {
+      const view = ComingSoonView(renderer, theme, "Kiln View", "App-focused Logcat is coming soon.");
+      contentHost.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "foundry-logs": {
+      const view = ComingSoonView(renderer, theme, "Foundry Logs", "Full device Logcat browsing is coming soon.");
+      contentHost.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    case "looking-glass": {
+      const view = ComingSoonView(renderer, theme, "Looking Glass", "Device mirroring is coming soon.");
+      contentHost.add(view);
+      currentViewElements.push(view);
+      break;
+    }
+    default: {
+      const view = ComingSoonView(renderer, theme, "Coming soon", `No UI exists yet for: ${currentView}`);
+      contentHost.add(view);
       currentViewElements.push(view);
       break;
     }
   }
 }
-var targetDir, projectDetection, detectedRoot, renderer, navigation, themeManager, currentViewElements, currentSelectElement = null;
+var targetDir, projectDetection, detectedRoot, themeManager, renderer, navigation, currentViewElements, currentSelectElement = null, appShell, contentHost, statusLine;
 var init_src = __esm(async () => {
   init_bootstrap();
   init_di();
@@ -9658,23 +9683,77 @@ var init_src = __esm(async () => {
   }
   await bootstrap();
   await setupDIModules();
+  themeManager = diContainer.get("ThemeManager");
+  await themeManager.reloadThemes();
+  themeManager.onThemeChange?.(() => {
+    renderCurrentView();
+  });
   await rememberCurrentAndroidProject();
   renderer = await createCliRenderer({ exitOnCtrlC: true });
   navigation = new NavigationManager;
-  themeManager = diContainer.get("ThemeManager");
   currentViewElements = [];
-  await themeManager.reloadThemes();
-  applyThemeToRenderer();
-  themeManager.onThemeChange(() => {
-    applyThemeToRenderer();
-    renderCurrentView();
+  appShell = new BoxRenderable15(renderer, {
+    id: "app-shell",
+    flexDirection: "column",
+    flexGrow: 1,
+    width: "100%",
+    height: "100%",
+    alignItems: "stretch",
+    justifyContent: "flex-start"
   });
+  contentHost = new BoxRenderable15(renderer, {
+    id: "content-host",
+    flexDirection: "column",
+    flexGrow: 1,
+    width: "100%",
+    alignItems: "stretch",
+    justifyContent: "flex-start"
+  });
+  statusLine = new BoxRenderable15(renderer, {
+    id: "status-line",
+    height: 1,
+    width: "100%",
+    alignSelf: "stretch",
+    justifyContent: "flex-start",
+    alignItems: "flex-start",
+    paddingLeft: 1
+  });
+  appShell.add(contentHost);
+  appShell.add(statusLine);
+  renderer.root.add(appShell);
   renderer.keyInput.on("keypress", (key) => {
     const currentView = navigation.getCurrentView();
-    if (key.name === "escape") {
-      if (currentView.startsWith("actionoutputview:")) {
+    const keyName = (key.name || "").toLowerCase();
+    if (currentView.startsWith("actionoutputview:")) {
+      return;
+    }
+    if (currentView === "about" && keyName === "t") {
+      navigation.navigateTo("settings");
+      renderCurrentView();
+      return;
+    }
+    if (currentView === "settings") {
+      const settingsViewModel = diContainer.get("SettingsViewModel");
+      if (keyName === "r") {
+        settingsViewModel.reloadThemes().then(renderCurrentView);
         return;
       }
+      if (keyName === "m") {
+        const current = themeManager.getThemeModePreference();
+        const next = current === "dark" ? "light" : current === "light" ? "system" : "dark";
+        settingsViewModel.setThemeModePreference(next).then(renderCurrentView);
+        return;
+      }
+      if (keyName === "d") {
+        settingsViewModel.selectThemeForMode(themeManager.getThemeId(), "dark").then(renderCurrentView);
+        return;
+      }
+      if (keyName === "l") {
+        settingsViewModel.selectThemeForMode(themeManager.getThemeId(), "light").then(renderCurrentView);
+        return;
+      }
+    }
+    if (key.name === "escape") {
       if (currentView === "projects") {
         const projectsViewModel = diContainer.get("ProjectsViewModel");
         if (projectsViewModel.isConfirmingRemoval()) {
@@ -9683,43 +9762,13 @@ var init_src = __esm(async () => {
         }
       }
       if (currentView !== "menu") {
-        navigation.navigateTo("menu");
+        navigation.goBack();
         renderCurrentView();
-      }
-      return;
-    }
-    if (key.name === "t" && !currentView.startsWith("actionoutputview:")) {
-      navigation.navigateTo("themes");
-      renderCurrentView();
-      return;
-    }
-    if (currentView === "themes") {
-      const keyName = (key.name || "").toLowerCase();
-      const settingsViewModel = diContainer.get("SettingsViewModel");
-      if (keyName === "r") {
-        settingsViewModel.reloadThemes();
-        return;
-      }
-      if (keyName === "m") {
-        const current = settingsViewModel.getThemeModePreference();
-        const next = current === "dark" ? "light" : current === "light" ? "system" : "dark";
-        settingsViewModel.setThemeModePreference(next);
-        return;
-      }
-      if (keyName === "d" || keyName === "l") {
-        const select = currentSelectElement;
-        const selectedOption = select?.getSelectedOption?.();
-        const selectedValue = typeof selectedOption?.value === "string" ? selectedOption.value : "";
-        if (selectedValue) {
-          settingsViewModel.selectThemeForMode(selectedValue, keyName === "d" ? "dark" : "light");
-        }
-        return;
       }
       return;
     }
     if (currentView === "projects") {
       const projectsViewModel = diContainer.get("ProjectsViewModel");
-      const keyName = (key.name || "").toLowerCase();
       if (projectsViewModel.isConfirmingRemoval()) {
         if (keyName === "y") {
           projectsViewModel.confirmRemove();

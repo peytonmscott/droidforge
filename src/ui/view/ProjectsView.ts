@@ -1,14 +1,16 @@
 import { BoxRenderable } from "@opentui/core";
 import { ProjectsViewModel } from '../../viewmodels';
-import { Header, Footer, SelectMenu } from '../components';
+import { Header, SelectMenu } from '../components';
 import type { UiTheme } from '../theme';
+import { menuPanelOptions, wireCompactMenuLayout } from '../layout';
 
 export function ProjectsView(
     renderer: any,
     viewModel: ProjectsViewModel,
     theme: UiTheme,
     onNavigate?: (action: string) => void,
-    onSelectCreated?: (select: any) => void
+    onSelectCreated?: (select: any) => void,
+    onStatusText?: (text: string) => void,
 ): BoxRenderable {
     // Create projects container
     const projectsContainer = new BoxRenderable(renderer, {
@@ -24,22 +26,12 @@ export function ProjectsView(
     projectsContainer.add(header);
 
     // Create select container
-    const selectContainer = new BoxRenderable(renderer, {
-        id: "select-container",
-        width: 120,
-        height: 20,
-        border: true,
-        borderStyle: "single",
-        borderColor: theme.borderColor ?? "#475569",
-        backgroundColor: theme.panelBackgroundColor ?? "transparent",
-        margin: 2
-    });
+    const selectContainer = new BoxRenderable(renderer, menuPanelOptions('projects-panel', theme));
 
     // Create select menu with all options
     const selectMenu = SelectMenu(renderer, {
         id: "projects-select",
         options: viewModel.getAllMenuOptions(),
-        height: 18,
         autoFocus: true,
         theme,
         selectedIndex: viewModel.getInitialSelectedIndex(),
@@ -51,15 +43,15 @@ export function ProjectsView(
         }
     });
 
+    wireCompactMenuLayout(selectContainer, selectMenu);
+
     onSelectCreated?.(selectMenu);
 
     function refreshMenu(): void {
         selectMenu.options = viewModel.getAllMenuOptions();
         selectMenu.setSelectedIndex(viewModel.getInitialSelectedIndex());
 
-        projectsContainer.remove('footer-box');
-        const footer = Footer(renderer, viewModel.getFooterText(), theme);
-        projectsContainer.add(footer);
+        onStatusText?.(viewModel.getFooterText());
 
         selectMenu.focus();
     }
@@ -69,9 +61,7 @@ export function ProjectsView(
     selectContainer.add(selectMenu);
     projectsContainer.add(selectContainer);
 
-    // Footer
-    const footer = Footer(renderer, viewModel.getFooterText(), theme);
-    projectsContainer.add(footer);
+    onStatusText?.(viewModel.getFooterText());
 
     return projectsContainer;
 }

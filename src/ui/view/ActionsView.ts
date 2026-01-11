@@ -2,6 +2,7 @@ import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
 import { ActionsViewModel } from '../../viewmodels';
 import { Header, SelectMenu } from '../components';
 import type { UiTheme } from '../theme';
+import { menuHeaderSectionOptions, menuPanelOptions, wireCompactMenuLayout } from '../layout';
 
 export function ActionsView(
     renderer: any,
@@ -18,30 +19,16 @@ export function ActionsView(
         backgroundColor: theme.backgroundColor ?? "transparent",
     });
 
-    const headerSection = new BoxRenderable(renderer, {
-        alignItems: "flex-start",
-        justifyContent: "flex-start",
-        width: 108,
-    });
+    const headerSection = new BoxRenderable(renderer, menuHeaderSectionOptions());
 
     headerSection.add(Header(renderer, "Actions", "Commands", theme));
     container.add(headerSection);
 
-    const menuPanel = new BoxRenderable(renderer, {
-        id: "menu-panel",
-        width: 100,
-        height: 20,
-        border: true,
-        borderStyle: "single",
-        borderColor: theme.borderColor ?? "#475569",
-        backgroundColor: theme.panelBackgroundColor ?? "transparent",
-        margin: 2,
-    });
+    const menuPanel = new BoxRenderable(renderer, menuPanelOptions('actions-panel', theme));
 
     const selectMenu = SelectMenu(renderer, {
         id: "actions-select",
         options: viewModel.getMenuOptions(),
-        height: 18,
         autoFocus: true,
         theme,
         onSelect: (_index, option) => {
@@ -53,6 +40,8 @@ export function ActionsView(
             }
         },
     });
+
+    wireCompactMenuLayout(menuPanel, selectMenu);
 
     function updateInlineMessage(): void {
         const message = viewModel.inlineMessage;

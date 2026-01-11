@@ -1,6 +1,6 @@
 import { Text, BoxRenderable, ASCIIFont, TextAttributes } from "@opentui/core";
 import { AboutViewModel } from '../../viewmodels';
-import { Header, Footer } from '../components';
+import { Header } from '../components';
 import type { UiTheme } from '../theme';
 
 export function AboutView(renderer: any, viewModel: AboutViewModel, theme: UiTheme): BoxRenderable {
@@ -46,10 +46,6 @@ export function AboutView(renderer: any, viewModel: AboutViewModel, theme: UiThe
 
     contentBox.add(infoBox);
     aboutContainer.add(contentBox);
-
-    // Footer
-    const footer = Footer(renderer, "ESC: Back to Menu | T: Themes", theme);
-    aboutContainer.add(footer);
 
     return aboutContainer;
 }
