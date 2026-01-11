@@ -8301,6 +8301,21 @@ var init_di = __esm(() => {
 });
 
 // src/utilities/renderer.ts
+function removeRenderableFromParentOrRoot(renderer, renderable) {
+  const id = renderable?.id;
+  if (!id)
+    return;
+  const parent = renderable?.parent;
+  if (parent && typeof parent.remove === "function") {
+    try {
+      parent.remove(id);
+      return;
+    } catch {}
+  }
+  try {
+    renderer.root.remove(id);
+  } catch {}
+}
 function clearCurrentView(renderer, currentViewElements, menuSelect) {
   for (const element of currentViewElements) {
     if (!element || typeof element !== "object")
@@ -8309,9 +8324,13 @@ function clearCurrentView(renderer, currentViewElements, menuSelect) {
       element.__dispose?.();
     } catch {}
     if (typeof element.destroyRecursively === "function") {
-      element.destroyRecursively();
-    } else if (element.id) {
-      renderer.root.remove(element.id);
+      try {
+        element.destroyRecursively();
+      } catch {
+        removeRenderableFromParentOrRoot(renderer, element);
+      }
+    } else {
+      removeRenderableFromParentOrRoot(renderer, element);
     }
   }
   currentViewElements.length = 0;
@@ -8322,9 +8341,19 @@ function clearCurrentView(renderer, currentViewElements, menuSelect) {
       } catch {}
     }
     if (typeof menuSelect.destroyRecursively === "function") {
-      menuSelect.destroyRecursively();
+      try {
+        menuSelect.destroyRecursively();
+      } catch {
+        removeRenderableFromParentOrRoot(renderer, menuSelect);
+      }
     } else if (typeof menuSelect.destroy === "function") {
-      menuSelect.destroy();
+      try {
+        menuSelect.destroy();
+      } catch {
+        removeRenderableFromParentOrRoot(renderer, menuSelect);
+      }
+    } else {
+      removeRenderableFromParentOrRoot(renderer, menuSelect);
     }
   }
 }
