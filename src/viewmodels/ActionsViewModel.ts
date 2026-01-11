@@ -196,28 +196,53 @@ export class ActionsViewModel {
 
             pending += decoder.decode(value, { stream: true });
 
-            // Gradle rich console can emit carriage returns for in-place updates.
-            // Normalize them into newlines so output remains readable.
-            pending = pending.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
             const parts = pending.split('\n');
             pending = parts.pop()!;
 
             for (const line of parts) {
                 if (line.trim()) {
-                    this._output.lines.push(line);
+                    this._output.lines.push(this.colorizeLine(line));
                 }
             }
 
-            // Auto-scroll to bottom while running
             this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
             this._onOutputUpdate?.();
         }
 
-        // Flush any remaining partial line
         if (pending.trim()) {
-            this._output.lines.push(pending);
+            this._output.lines.push(this.colorizeLine(pending));
             this._onOutputUpdate?.();
         }
+    }
+
+    private colorizeLine(line: string): string {
+        const trimmed = line.trim();
+
+        if (trimmed.startsWith('WARNING:')) {
+            return `\x1b[33m${line}\x1b[0m`;
+        }
+        if (trimmed.startsWith('> Task ')) {
+            if (trimmed.endsWith('UP-TO-DATE')) {
+                return `\x1b[36m${line}\x1b[0m`;
+            }
+            if (trimmed.endsWith('SKIPPED')) {
+                return `\x1b[90m${line}\x1b[0m`;
+            }
+            if (trimmed.endsWith('NO-SOURCE')) {
+                return `\x1b[90m${line}\x1b[0m`;
+            }
+            if (trimmed.endsWith('FAILED')) {
+                return `\x1b[31m${line}\x1b[0m`;
+            }
+            return `\x1b[32m${line}\x1b[0m`;
+        }
+        if (trimmed.startsWith('BUILD SUCCESSFUL')) {
+            return `\x1b[1;32m${line}\x1b[0m`;
+        }
+        if (trimmed.startsWith('BUILD FAILED')) {
+            return `\x1b[1;31m${line}\x1b[0m`;
+        }
+
+        return line;
     }
 }
