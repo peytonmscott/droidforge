@@ -1,6 +1,7 @@
 import { BoxRenderable } from "@opentui/core";
 
 import type { UiTheme } from "./theme";
+import { LAYOUT } from "./constants";
 
 export const MENU_PANEL_MAX_WIDTH = 96;
 export const MENU_PANEL_MIN_WIDTH = 40;
@@ -11,7 +12,7 @@ export const MENU_PANEL_MIN_HEIGHT = 8;
 
 export const COMPACT_WIDTH_THRESHOLD = 70;
 
-export function createMenuContainer(renderer: any, id: string, theme: UiTheme): BoxRenderable {
+export function createMenuContainer(renderer: import('../../utilities/rendererTypes').CliRendererLike, id: string, theme: UiTheme): BoxRenderable {
     return new BoxRenderable(renderer, {
         id,
         flexDirection: "column",
@@ -30,6 +31,7 @@ export function menuHeaderSectionOptions() {
         alignItems: "flex-start",
         justifyContent: "flex-start",
         flexShrink: 0,
+        marginBottom: 0.5,
     } as const;
 }
 
@@ -46,7 +48,8 @@ export function menuPanelOptions(id: string, theme: UiTheme, overrides: Record<s
         borderStyle: "single",
         borderColor: theme.borderColor ?? "#475569",
         backgroundColor: theme.panelBackgroundColor ?? "transparent",
-        margin: 2,
+        margin: LAYOUT.PANEL_MARGIN,
+        padding: LAYOUT.PANEL_PADDING,
         ...overrides,
     } as const;
 }

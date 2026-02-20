@@ -5,62 +5,52 @@ export type RootMenuMode = 'forge' | 'anvil';
 export class MainMenuViewModel {
     private forgeMenuOptions: MenuOption[] = [
         {
-            name: 'Project Ledger',
+            name: 'Projects',
             description: 'Find, open, and switch Android projects',
             value: 'projects',
         },
         {
-            name: 'Smithy (Devices)',
+            name: 'Devices',
             description: 'Manage emulators and connected devices',
             value: 'devices',
         },
         {
-            name: 'Command Tongs (ADB)',
-            description: 'Quick ADB actions without the finger burns',
+            name: 'ADB Actions',
+            description: 'Quick ADB commands for device management',
             value: 'adb',
         },
         {
-            name: 'Maker’s Mark',
-            description: 'About Droidforge, version, links',
+            name: 'About',
+            description: 'Version, credits, and links',
             value: 'about',
         },
     ];
 
     private anvilMenuOptions: MenuOption[] = [
         {
-            name: 'Strike (Run)',
-            description: 'Build → install → launch → open Logcat',
+            name: 'Run App',
+            description: 'Build, install, launch, and show logs',
             value: 'actionoutputview:installDebug',
         },
         {
-            name: 'Temper (Build)',
+            name: 'Build',
             description: 'Build the project without deploying',
             value: 'actionoutputview:assembleDebug',
         },
         {
-            name: 'Kiln View (App Logs)',
+            name: 'App Logs',
             description: 'App-focused Logcat (package/PID filtered)',
-            value: 'kiln-view',
+            value: 'app-logs',
         },
         {
-            name: 'Foundry Logs (Device Logs)',
+            name: 'Device Logs',
             description: 'Full device Logcat with filters',
-            value: 'foundry-logs',
+            value: 'device-logs',
         },
         {
-            name: 'Looking Glass (Mirror)',
-            description: 'Mirror a physical device display',
-            value: 'looking-glass',
-        },
-        {
-            name: 'Hammer List (Pinned Tasks)',
-            description: 'Your most-used Gradle tasks',
-            value: 'hammer-list',
-        },
-        {
-            name: 'Blueprints (All Tasks)',
-            description: 'Browse/search every Gradle task in the project',
-            value: 'blueprints',
+            name: 'Screen Mirror',
+            description: 'Mirror a device display via scrcpy',
+            value: 'screen-mirror',
         },
     ];
 

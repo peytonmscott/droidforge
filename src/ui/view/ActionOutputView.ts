@@ -1,7 +1,9 @@
 import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
+import type { CliRendererLike } from '../../utilities/rendererTypes';
 import { ActionsViewModel } from '../../viewmodels';
 import { ansiToStyledText, type AnsiPalette } from "../../utilities";
 import type { UiTheme } from "../theme";
+import { SPACING } from "../constants";
 
 function stripAnsi(text: string): string {
     return text
@@ -12,7 +14,7 @@ function stripAnsi(text: string): string {
 }
 
 export function ActionOutputView(
-    renderer: any,
+    renderer: CliRendererLike,
     viewModel: ActionsViewModel,
     command: string,
     theme: UiTheme,
@@ -43,7 +45,8 @@ export function ActionOutputView(
         borderStyle: "single",
         borderColor: theme.borderColor ?? "#475569",
         backgroundColor: theme.panelBackgroundColor ?? "transparent",
-        margin: 1,
+        margin: SPACING.NORMAL,
+        padding: SPACING.NORMAL,
         onSizeChange: function() {
             viewModel.setOutputWindowSize(Math.max(1, this.height - 2));
         },
@@ -119,7 +122,7 @@ export function ActionOutputView(
         const stateIcon = stateIcons[viewModel.state];
         const exitInfo = output.exitCode !== null ? ` (exit: ${output.exitCode})` : '';
         const scrollInfo = `[${output.scrollOffset + 1}-${Math.min(output.scrollOffset + visibleLineCount, output.lines.length)}/${output.lines.length}]`;
-        setStatusText?.(`${stateIcon} ${viewModel.state}${exitInfo} ${scrollInfo} • j/k: scroll • c: copy • ESC: cancel/back`);
+        setStatusText?.(`${stateIcon} ${viewModel.state}${exitInfo} ${scrollInfo} • j/k: scroll • PgUp/PgDn: page • Home/End: top/bottom • r: rerun • c: copy • ESC: back`);
     }
 
     viewModel.setOutputUpdateCallback(updateOutput);
@@ -136,6 +139,31 @@ export function ActionOutputView(
             case 'up':
                 if (viewModel.state !== 'idle') {
                     viewModel.scrollUp();
+                }
+                break;
+            case 'pageup':
+                if (viewModel.state !== 'idle') {
+                    viewModel.pageUp();
+                }
+                break;
+            case 'pagedown':
+                if (viewModel.state !== 'idle') {
+                    viewModel.pageDown();
+                }
+                break;
+            case 'home':
+                if (viewModel.state !== 'idle') {
+                    viewModel.scrollToTop();
+                }
+                break;
+            case 'end':
+                if (viewModel.state !== 'idle') {
+                    viewModel.scrollToBottom();
+                }
+                break;
+            case 'r':
+                if (viewModel.state === 'completed' || viewModel.state === 'error') {
+                    viewModel.rerun();
                 }
                 break;
             case 'c':
@@ -179,7 +207,7 @@ export function ActionOutputView(
 
     ensureLive();
 
-    setStatusText?.(`⏳ starting • j/k: scroll • c: copy • ESC: cancel/back`);
+    setStatusText?.(`⏳ starting • j/k: scroll • PgUp/PgDn: page • Home/End: top/bottom • r: rerun • c: copy • ESC: cancel`);
 
     viewModel.setOutputWindowSize(getVisibleLineCount());
     viewModel.runGradleCommand(command);

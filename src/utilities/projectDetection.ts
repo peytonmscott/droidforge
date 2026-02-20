@@ -123,7 +123,7 @@ export class ProjectDetection {
     }
 }
 
-interface DetectionResult {
+export interface DetectionResult {
     isAndroidProject: boolean;
     projectRoot: string | null;
     projectType?: 'application' | 'library' | 'unknown';

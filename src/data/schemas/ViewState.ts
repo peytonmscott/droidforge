@@ -1,5 +1,7 @@
+import type { DisposableRenderable, SelectLike } from '../../utilities/rendererTypes';
+
 export interface ViewState {
     currentView: string;
-    menuSelect: any; // TODO: Type properly from OpenTUI
-    currentViewElements: any[]; // TODO: Type properly
+    menuSelect: SelectLike | null;
+    currentViewElements: DisposableRenderable[];
 }

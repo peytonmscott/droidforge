@@ -2,6 +2,7 @@ import { BoxRenderable } from '@opentui/core';
 
 import { menuHeaderSectionOptions, menuPanelOptions, wireCompactMenuLayout } from '../layout';
 
+import type { CliRendererLike, SelectLike } from '../../utilities/rendererTypes';
 import type { MenuOption } from '../../data/schemas';
 import type { SettingsViewModel } from '../../viewmodels';
 import type { UiTheme } from '../theme';
@@ -9,11 +10,11 @@ import type { UiTheme } from '../theme';
 import { Header, SelectMenu } from '../components';
 
 export function ThemePickerView(
-    renderer: any,
+    renderer: CliRendererLike,
     viewModel: SettingsViewModel,
     theme: UiTheme,
     onBack?: () => void,
-    onSelectCreated?: (select: any) => void,
+    onSelectCreated?: (select: SelectLike) => void,
 ): BoxRenderable {
     const container = new BoxRenderable(renderer, {
         id: 'theme-picker-container',

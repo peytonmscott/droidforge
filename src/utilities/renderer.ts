@@ -1,8 +1,9 @@
 import { BoxRenderable } from "@opentui/core";
+import type { CliRendererLike, DisposableRenderable } from './rendererTypes';
 
-type DisposableRenderable = BoxRenderable & { __dispose?: () => void };
+type BoxWithDispose = BoxRenderable & { __dispose?: () => void };
 
-function removeRenderableFromParentOrRoot(renderer: any, renderable: any): void {
+function removeRenderableFromParentOrRoot(renderer: CliRendererLike, renderable: DisposableRenderable | BoxWithDispose): void {
     const id = renderable?.id;
     if (!id) return;
 
@@ -23,7 +24,11 @@ function removeRenderableFromParentOrRoot(renderer: any, renderable: any): void 
     }
 }
 
-export function clearCurrentView(renderer: any, currentViewElements: DisposableRenderable[], menuSelect?: any): void {
+export function clearCurrentView(
+    renderer: CliRendererLike,
+    currentViewElements: (DisposableRenderable | BoxWithDispose)[],
+    menuSelect?: DisposableRenderable | BoxWithDispose | null
+): void {
     // Dispose and destroy existing elements.
     for (const element of currentViewElements) {
         if (!element || typeof element !== 'object') continue;
@@ -34,9 +39,9 @@ export function clearCurrentView(renderer: any, currentViewElements: DisposableR
             // ignore
         }
 
-        if (typeof (element as any).destroyRecursively === 'function') {
+        if (typeof (element as BoxWithDispose).destroyRecursively === 'function') {
             try {
-                (element as any).destroyRecursively();
+                (element as BoxWithDispose).destroyRecursively();
             } catch {
                 removeRenderableFromParentOrRoot(renderer, element);
             }
@@ -57,9 +62,9 @@ export function clearCurrentView(renderer: any, currentViewElements: DisposableR
             }
         }
 
-        if (typeof menuSelect.destroyRecursively === 'function') {
+        if (typeof (menuSelect as BoxWithDispose).destroyRecursively === 'function') {
             try {
-                menuSelect.destroyRecursively();
+                (menuSelect as BoxWithDispose).destroyRecursively();
             } catch {
                 removeRenderableFromParentOrRoot(renderer, menuSelect);
             }

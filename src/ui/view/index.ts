@@ -1,7 +1,6 @@
 export { MainMenuView } from './MainMenuView';
 export { DashboardView } from './DashboardView';
 export { ProjectsView } from './ProjectsView';
-export { ToolsView } from './ToolsView';
 export { SettingsView } from './SettingsView';
 export { AboutView } from './AboutView';
 export { ActionsView } from './ActionsView';
@@ -9,3 +8,7 @@ export { GradleView } from './GradleView';
 export { ActionOutputView } from './ActionOutputView';
 export { ComingSoonView } from './ComingSoonView';
 export { ThemePickerView } from './ThemePickerView';
+export { DevicesView } from './DevicesView';
+export { MirrorView } from './MirrorView';
+export { LogcatView } from './LogcatView';
+export { AdbActionsView } from './AdbActionsView';

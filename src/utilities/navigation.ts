@@ -36,4 +36,9 @@ export class NavigationManager {
         return this.viewStack.length > 1;
     }
 
+    clear(): void {
+        this.currentView = "menu";
+        this.viewStack = ["menu"];
+    }
+
 }

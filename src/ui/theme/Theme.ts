@@ -7,7 +7,7 @@ import { ensureConfigFileExists, updateConfig } from '../../config/config';
 
 export type ThemeModePreference = 'dark' | 'light' | 'system';
 import { getConfigDir } from '../../utilities/paths';
-import { ProjectDetection } from '../../utilities/projectDetection';
+import type { WorkspaceService } from '../../workspace';
 
 import { BUILTIN_THEMES, type ThemeRegistration } from './builtinThemes';
 import { resolveThemeFile, type ThemeFile, type ThemeMode } from './themeSchema';
@@ -124,8 +124,8 @@ function isThemeFile(value: unknown): value is ThemeFile {
         typeof value === 'object' &&
         value !== null &&
         'theme' in value &&
-        typeof (value as any).theme === 'object' &&
-        (value as any).theme !== null
+        typeof (value as { theme?: unknown }).theme === 'object' &&
+        (value as { theme: unknown }).theme !== null
     );
 }
 
@@ -151,8 +151,9 @@ function listThemeFiles(dir: string): ThemeEntry[] {
     return entries;
 }
 
-function themeDirsForCwd(cwd: string): { source: ThemeSource; dir: string }[] {
-    const detection = new ProjectDetection().detectAndroidProject(cwd);
+function themeDirsForWorkspace(workspace: WorkspaceService): { source: ThemeSource; dir: string }[] {
+    const cwd = workspace.getCwd();
+    const root = workspace.getRoot();
 
     const dirs: { source: ThemeSource; dir: string }[] = [];
 
@@ -160,8 +161,8 @@ function themeDirsForCwd(cwd: string): { source: ThemeSource; dir: string }[] {
     dirs.push({ source: 'user', dir: path.join(getConfigDir(), 'themes') });
 
     // Project-level themes
-    if (detection.projectRoot) {
-        dirs.push({ source: 'project', dir: path.join(detection.projectRoot, '.droidforge', 'themes') });
+    if (root) {
+        dirs.push({ source: 'project', dir: path.join(root, '.droidforge', 'themes') });
     }
 
     // Current directory overrides
@@ -171,6 +172,7 @@ function themeDirsForCwd(cwd: string): { source: ThemeSource; dir: string }[] {
 }
 
 export class ThemeManager {
+    private readonly workspace: WorkspaceService;
     private currentThemeId: string;
     private currentTheme: UiTheme;
     private currentMode: ThemeMode;
@@ -179,7 +181,8 @@ export class ThemeManager {
 
     private themeRegistry = new Map<string, ThemeEntry>();
 
-    constructor() {
+    constructor(workspace: WorkspaceService) {
+        this.workspace = workspace;
         this.currentThemeId = 'opencode';
         this.currentTheme = this.buildFallbackTheme();
         this.currentMode = 'dark';
@@ -242,8 +245,7 @@ export class ThemeManager {
             });
         }
 
-        const cwd = process.cwd();
-        const dirs = themeDirsForCwd(cwd);
+        const dirs = themeDirsForWorkspace(this.workspace);
 
         for (const { source, dir } of dirs) {
             const themes = listThemeFiles(dir);
@@ -287,7 +289,9 @@ export class ThemeManager {
 
         if (prefMode === 'system') {
             const key = this.currentMode === 'dark' ? 'themeIdDark' : 'themeIdLight';
-            await updateConfig({ preferences: { [key]: themeId } as any });
+            await updateConfig({
+                preferences: key === 'themeIdDark' ? { themeIdDark: themeId } : { themeIdLight: themeId },
+            });
         } else {
             await updateConfig({ preferences: { themeId } });
         }
@@ -299,7 +303,9 @@ export class ThemeManager {
         if (!this.themeRegistry.has(themeId)) return;
 
         const key = mode === 'dark' ? 'themeIdDark' : 'themeIdLight';
-        await updateConfig({ preferences: { [key]: themeId } as any });
+        await updateConfig({
+            preferences: key === 'themeIdDark' ? { themeIdDark: themeId } : { themeIdLight: themeId },
+        });
 
         if (this.modePreference === 'system' && this.currentMode === mode) {
             await this.loadSelectedTheme();
@@ -307,7 +313,7 @@ export class ThemeManager {
     }
 
     async setThemeModePreference(mode: ThemeModePreference): Promise<void> {
-        await updateConfig({ preferences: { themeMode: mode } as any });
+        await updateConfig({ preferences: { themeMode: mode } });
         await this.loadSelectedTheme();
     }
 

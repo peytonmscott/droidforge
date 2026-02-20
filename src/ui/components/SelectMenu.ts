@@ -1,5 +1,6 @@
 import { SelectRenderable, SelectRenderableEvents } from "@opentui/core";
 import type { MenuOption } from "../../data/schemas";
+import type { CliRendererLike } from "../../utilities/rendererTypes";
 import type { UiTheme } from "../theme";
 
 export interface SelectMenuProps {
@@ -15,7 +16,7 @@ export interface SelectMenuProps {
     theme?: UiTheme;
 }
 
-export function SelectMenu(renderer: any, props: SelectMenuProps): SelectRenderable {
+export function SelectMenu(renderer: CliRendererLike, props: SelectMenuProps): SelectRenderable {
     const select = new SelectRenderable(renderer, {
         id: props.id,
         height: props.height,

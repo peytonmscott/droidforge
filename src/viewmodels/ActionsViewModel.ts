@@ -1,9 +1,10 @@
 import fs from 'fs';
+import path from 'path';
 
 import type { Subprocess } from 'bun';
 
 import type { MenuOption } from '../data/schemas';
-import { ProjectDetection } from '../utilities/projectDetection';
+import type { WorkspaceService } from '../workspace';
 
 export type ActionState = 'idle' | 'running' | 'completed' | 'error';
 
@@ -22,6 +23,7 @@ const CURATED_ACTIONS: Array<{ label: string; description: string; command: stri
 ];
 
 export class ActionsViewModel {
+    private readonly _workspace: WorkspaceService;
     private _menuMessage: string | null = null;
     private _onMenuUpdate: (() => void) | null = null;
 
@@ -29,7 +31,12 @@ export class ActionsViewModel {
     private _output: ActionOutput = { lines: [], scrollOffset: 0, exitCode: null };
     private _outputWindowSize = 20;
     private _currentProcess: Subprocess | null = null;
+    private _lastCommand: string | null = null;
     private _onOutputUpdate: (() => void) | null = null;
+
+    constructor(workspace: WorkspaceService) {
+        this._workspace = workspace;
+    }
 
     get state(): ActionState {
         return this._state;
@@ -87,12 +94,13 @@ export class ActionsViewModel {
     async runGradleCommand(command: string): Promise<void> {
         this._state = 'running';
         this._output = { lines: [], scrollOffset: 0, exitCode: null };
+        this._lastCommand = command;
         this._onOutputUpdate?.();
 
-        const cwd = process.cwd();
-        const detection = new ProjectDetection().detectAndroidProject(cwd);
+        const cwd = this._workspace.getCwd();
+        const detection = this._workspace.getDetection();
 
-        if (!detection.isAndroidProject || !fs.existsSync('gradlew')) {
+        if (!detection.isAndroidProject || !fs.existsSync(path.join(cwd, 'gradlew'))) {
             this._output.lines.push(
                 'No Android Gradle project detected.\n' +
                     'Launch Droid Forge from your project root, or pass a path: droidforge /path/to/android/project',
@@ -159,6 +167,37 @@ export class ActionsViewModel {
         this._onOutputUpdate?.();
     }
 
+    pageUp(): void {
+        const visibleLines = this._outputWindowSize;
+        this._output.scrollOffset = Math.max(0, this._output.scrollOffset - visibleLines);
+        this._onOutputUpdate?.();
+    }
+
+    pageDown(): void {
+        const visibleLines = this._outputWindowSize;
+        const maxOffset = Math.max(0, this._output.lines.length - visibleLines);
+        this._output.scrollOffset = Math.min(maxOffset, this._output.scrollOffset + visibleLines);
+        this._onOutputUpdate?.();
+    }
+
+    scrollToTop(): void {
+        this._output.scrollOffset = 0;
+        this._onOutputUpdate?.();
+    }
+
+    scrollToBottom(): void {
+        const visibleLines = this._outputWindowSize;
+        this._output.scrollOffset = Math.max(0, this._output.lines.length - visibleLines);
+        this._onOutputUpdate?.();
+    }
+
+    rerun(): void {
+        if (this._lastCommand) {
+            this.reset();
+            void this.runGradleCommand(this._lastCommand);
+        }
+    }
+
     getOutputText(): string {
         return this._output.lines.join('\n');
     }
@@ -170,9 +209,9 @@ export class ActionsViewModel {
     }
 
     private isGradleProject(): boolean {
-        const cwd = process.cwd();
-        const detection = new ProjectDetection().detectAndroidProject(cwd);
-        const hasGradleWrapper = fs.existsSync('gradlew');
+        const cwd = this._workspace.getCwd();
+        const detection = this._workspace.getDetection();
+        const hasGradleWrapper = fs.existsSync(path.join(cwd, 'gradlew'));
 
         if (!detection.isAndroidProject || !hasGradleWrapper) {
             this._menuMessage =

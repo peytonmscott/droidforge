@@ -1,7 +1,8 @@
 import fs from 'fs';
+import path from 'path';
 
 import type { MenuOption } from '../data/schemas';
-import { ProjectDetection } from '../utilities/projectDetection';
+import type { WorkspaceService } from '../workspace';
 
 export type GradleMenuState = 'loading' | 'ready' | 'not-gradle' | 'error';
 
@@ -49,6 +50,7 @@ export interface GradleViewModelOptions {
 export class GradleViewModel {
     private static taskCache = new Map<string, GradleTask[]>();
 
+    private readonly _workspace: WorkspaceService;
     private _menuState: GradleMenuState = 'loading';
     private _menuMessage: string | null = null;
     private _tasks: GradleTask[] = [];
@@ -57,7 +59,8 @@ export class GradleViewModel {
     private _tasksLoadPromise: Promise<void> | null = null;
     private _onMenuUpdate: (() => void) | null = null;
 
-    constructor(options: GradleViewModelOptions = {}) {
+    constructor(workspace: WorkspaceService, options: GradleViewModelOptions = {}) {
+        this._workspace = workspace;
         this._showAllTasks = options.mode === 'all';
         this._showToggle = options.showToggle ?? true;
         void this.loadGradleTasks();
@@ -152,7 +155,7 @@ export class GradleViewModel {
             this._menuMessage = null;
             this.notifyMenuUpdate();
 
-            const cwd = process.cwd();
+            const cwd = this._workspace.getCwd();
             const cachedTasks = GradleViewModel.taskCache.get(cwd);
             if (cachedTasks) {
                 this._tasks = cachedTasks;
@@ -162,8 +165,8 @@ export class GradleViewModel {
                 return;
             }
 
-            const detection = new ProjectDetection().detectAndroidProject(cwd);
-            const hasGradleWrapper = fs.existsSync('gradlew');
+            const detection = this._workspace.getDetection();
+            const hasGradleWrapper = fs.existsSync(path.join(cwd, 'gradlew'));
 
             if (!detection.isAndroidProject || !hasGradleWrapper) {
                 this._menuState = 'not-gradle';

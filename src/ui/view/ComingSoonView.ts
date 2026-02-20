@@ -4,7 +4,7 @@ import type { UiTheme } from "../theme";
 import { MENU_PANEL_MAX_WIDTH, MENU_PANEL_MIN_WIDTH, MENU_PANEL_WIDTH } from "../layout";
 
 export function ComingSoonView(
-    renderer: any,
+    renderer: import('../../utilities/rendererTypes').CliRendererLike,
     theme: UiTheme,
     title: string,
     description: string

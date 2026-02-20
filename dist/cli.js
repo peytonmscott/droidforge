@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // @bun
 var __defProp = Object.defineProperty;
+var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, {
@@ -489,95 +490,6 @@ __export(exports_repositories, {
 var init_repositories = __esm(() => {
   init_Database();
 });
-
-// src/utilities/projectDetection.ts
-class ProjectDetection {
-  findAndroidProjectRoot(startDir) {
-    const fs4 = __require("fs");
-    const path5 = __require("path");
-    let currentDir = path5.resolve(startDir || process.cwd());
-    while (true) {
-      const hasSettings = fs4.existsSync(path5.join(currentDir, "settings.gradle")) || fs4.existsSync(path5.join(currentDir, "settings.gradle.kts"));
-      if (hasSettings)
-        return currentDir;
-      const parentDir = path5.dirname(currentDir);
-      if (parentDir === currentDir)
-        return null;
-      currentDir = parentDir;
-    }
-  }
-  detectAndroidProject(dir) {
-    const fs4 = __require("fs");
-    const path5 = __require("path");
-    const projectRoot = this.findAndroidProjectRoot(dir || process.cwd());
-    if (!projectRoot) {
-      return { isAndroidProject: false, confidence: "high", projectRoot: null };
-    }
-    const androidPlugins = [
-      "com.android.application",
-      "com.android.library",
-      "com.android.dynamic-feature"
-    ];
-    const buildFiles = [
-      "build.gradle",
-      "build.gradle.kts",
-      "app/build.gradle",
-      "app/build.gradle.kts"
-    ];
-    const versionCatalog = "gradle/libs.versions.toml";
-    let foundAndroidPlugin = false;
-    let projectType = "unknown";
-    const tomlPath = path5.join(projectRoot, versionCatalog);
-    if (fs4.existsSync(tomlPath)) {
-      const content = fs4.readFileSync(tomlPath, "utf8");
-      for (const plugin of androidPlugins) {
-        if (content.includes(`id = "${plugin}"`)) {
-          foundAndroidPlugin = true;
-          projectType = plugin.includes("application") ? "application" : plugin.includes("library") ? "library" : "unknown";
-          break;
-        }
-      }
-    }
-    if (!foundAndroidPlugin) {
-      for (const file of buildFiles) {
-        const filePath = path5.join(projectRoot, file);
-        if (!fs4.existsSync(filePath))
-          continue;
-        const content = fs4.readFileSync(filePath, "utf8");
-        for (const plugin of androidPlugins) {
-          if (content.includes(`'${plugin}'`) || content.includes(`"${plugin}"`) || content.includes(`id("${plugin}")`)) {
-            foundAndroidPlugin = true;
-            projectType = plugin.includes("application") ? "application" : plugin.includes("library") ? "library" : "unknown";
-            break;
-          }
-        }
-        if (!foundAndroidPlugin) {
-          const aliasPatterns = [
-            { pattern: /alias\(libs\.plugins\.android\.application\)/, type: "application" },
-            { pattern: /alias\(libs\.plugins\.android\.library\)/, type: "library" },
-            { pattern: /alias\(libs\.plugins\.com\.android\.application\)/, type: "application" },
-            { pattern: /alias\(libs\.plugins\.com\.android\.library\)/, type: "library" }
-          ];
-          for (const { pattern, type } of aliasPatterns) {
-            if (pattern.test(content)) {
-              foundAndroidPlugin = true;
-              projectType = type;
-              break;
-            }
-          }
-        }
-        if (foundAndroidPlugin)
-          break;
-      }
-    }
-    return {
-      isAndroidProject: foundAndroidPlugin || Boolean(projectRoot),
-      projectType,
-      confidence: foundAndroidPlugin ? "high" : projectRoot ? "medium" : "low",
-      projectRoot
-    };
-  }
-}
 
 // src/ui/theme/themes/aura.json
 var aura_default;
@@ -7241,25 +7153,28 @@ function listThemeFiles(dir) {
   }
   return entries;
 }
-function themeDirsForCwd(cwd) {
-  const detection = new ProjectDetection().detectAndroidProject(cwd);
+function themeDirsForWorkspace(workspace) {
+  const cwd = workspace.getCwd();
+  const root = workspace.getRoot();
   const dirs = [];
   dirs.push({ source: "user", dir: path5.join(getConfigDir(), "themes") });
-  if (detection.projectRoot) {
-    dirs.push({ source: "project", dir: path5.join(detection.projectRoot, ".droidforge", "themes") });
+  if (root) {
+    dirs.push({ source: "project", dir: path5.join(root, ".droidforge", "themes") });
   }
   dirs.push({ source: "cwd", dir: path5.join(cwd, ".droidforge", "themes") });
   return dirs;
 }
 
 class ThemeManager {
+  workspace;
   currentThemeId;
   currentTheme;
   currentMode;
   modePreference;
   listeners = new Set;
   themeRegistry = new Map;
-  constructor() {
+  constructor(workspace) {
+    this.workspace = workspace;
     this.currentThemeId = "opencode";
     this.currentTheme = this.buildFallbackTheme();
     this.currentMode = "dark";
@@ -7313,8 +7228,7 @@ class ThemeManager {
         modeOverride: theme.mode
       });
     }
-    const cwd = process.cwd();
-    const dirs = themeDirsForCwd(cwd);
+    const dirs = themeDirsForWorkspace(this.workspace);
     for (const { source, dir } of dirs) {
       const themes = listThemeFiles(dir);
       for (const entry of themes) {
@@ -7346,7 +7260,9 @@ class ThemeManager {
     const prefMode = config.preferences.themeMode ?? "dark";
     if (prefMode === "system") {
       const key = this.currentMode === "dark" ? "themeIdDark" : "themeIdLight";
-      await updateConfig({ preferences: { [key]: themeId } });
+      await updateConfig({
+        preferences: key === "themeIdDark" ? { themeIdDark: themeId } : { themeIdLight: themeId }
+      });
     } else {
       await updateConfig({ preferences: { themeId } });
     }
@@ -7356,7 +7272,9 @@ class ThemeManager {
     if (!this.themeRegistry.has(themeId))
       return;
     const key = mode === "dark" ? "themeIdDark" : "themeIdLight";
-    await updateConfig({ preferences: { [key]: themeId } });
+    await updateConfig({
+      preferences: key === "themeIdDark" ? { themeIdDark: themeId } : { themeIdLight: themeId }
+    });
     if (this.modePreference === "system" && this.currentMode === mode) {
       await this.loadSelectedTheme();
     }
@@ -7534,65 +7452,257 @@ var init_theme = __esm(() => {
   init_Theme();
 });
 
+// src/adb/parsers.ts
+function parseDevicesOutput(output2) {
+  const lines = output2.trim().split(`
+`).slice(1);
+  return lines.filter((line) => line.trim()).map((line) => {
+    const parts = line.split(/\s+/);
+    const serial = parts[0] ?? "";
+    const status = parts[1];
+    const device = {
+      serial,
+      status,
+      type: serial.startsWith("emulator-") ? "emulator" : serial.includes(".") ? "unknown" : "physical"
+    };
+    for (const part of parts.slice(2)) {
+      if (part.startsWith("model:"))
+        device.model = part.slice(6);
+      if (part.startsWith("product:"))
+        device.product = part.slice(8);
+      if (part.startsWith("device:"))
+        device.codename = part.slice(7);
+      if (part.startsWith("usb:") || part.includes(":"))
+        device.transport = part;
+    }
+    return device;
+  });
+}
+function parseGetpropOutput(output2) {
+  const props = {};
+  const regex = /\[([^\]]+)\]:\s*\[([^\]]*)\]/g;
+  let match;
+  while ((match = regex.exec(output2)) !== null) {
+    if (match[1] !== undefined && match[2] !== undefined) {
+      props[match[1]] = match[2];
+    }
+  }
+  return props;
+}
+function parseAvdList(output2) {
+  return output2.trim().split(`
+`).filter((line) => line.trim());
+}
+
+// src/adb/AdbService.ts
+var exports_AdbService = {};
+__export(exports_AdbService, {
+  AdbService: () => AdbService
+});
+
+class AdbService {
+  _adbPath = null;
+  _emulatorPath = null;
+  constructor() {
+    this.detectPaths();
+  }
+  detectPaths() {
+    this._adbPath = Bun.which("adb");
+    const androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+    if (androidHome) {
+      this._emulatorPath = `${androidHome}/emulator/emulator`;
+    } else {
+      this._emulatorPath = Bun.which("emulator");
+    }
+  }
+  isAvailable() {
+    return this._adbPath !== null;
+  }
+  getEmulatorPath() {
+    return this._emulatorPath;
+  }
+  async listDevices() {
+    if (!this._adbPath)
+      return [];
+    const output2 = await this.runCommand(["devices", "-l"]);
+    return parseDevicesOutput(output2);
+  }
+  async getDeviceProperties(serial) {
+    const output2 = await this.runCommand(["-s", serial, "shell", "getprop"]);
+    return parseGetpropOutput(output2);
+  }
+  async getDeviceMetadata(serial) {
+    const props = await this.getDeviceProperties(serial);
+    return {
+      manufacturer: props["ro.product.manufacturer"] ?? "Unknown",
+      model: props["ro.product.model"] ?? "Unknown",
+      brand: props["ro.product.brand"] ?? "Unknown",
+      device: props["ro.product.device"] ?? "Unknown",
+      androidVersion: props["ro.build.version.release"] ?? "Unknown",
+      apiLevel: parseInt(props["ro.build.version.sdk"] ?? "0", 10),
+      density: parseInt(props["ro.sf.lcd_density"] ?? "0", 10),
+      isEmulator: serial.startsWith("emulator-") || props["ro.build.characteristics"]?.includes("emulator") === true
+    };
+  }
+  async installApk(serial, apkPath) {
+    return this.runCommandWithResult(["-s", serial, "install", "-r", apkPath]);
+  }
+  async uninstallPackage(serial, packageName) {
+    return this.runCommandWithResult(["-s", serial, "uninstall", packageName]);
+  }
+  async clearAppData(serial, packageName) {
+    return this.runCommandWithResult(["-s", serial, "shell", "pm", "clear", packageName]);
+  }
+  async forceStop(serial, packageName) {
+    return this.runCommandWithResult(["-s", serial, "shell", "am", "force-stop", packageName]);
+  }
+  async listPackages(serial, thirdPartyOnly = true) {
+    const args = ["-s", serial, "shell", "pm", "list", "packages"];
+    if (thirdPartyOnly)
+      args.push("-3");
+    const output2 = await this.runCommand(args);
+    return output2.trim().split(`
+`).filter((line) => line.startsWith("package:")).map((line) => line.slice(8));
+  }
+  async getPackagePid(serial, packageName) {
+    const output2 = await this.runCommand(["-s", serial, "shell", "pidof", "-s", packageName]);
+    const pid = parseInt(output2.trim(), 10);
+    return isNaN(pid) ? null : pid;
+  }
+  async killEmulator(serial) {
+    await this.runCommand(["-s", serial, "emu", "kill"]);
+  }
+  spawnLogcat(serial, args = []) {
+    const cmd = [this._adbPath, "-s", serial, "logcat", ...args];
+    return Bun.spawn(cmd, {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+  }
+  async runCommand(args) {
+    if (!this._adbPath)
+      throw new Error("ADB not found");
+    const proc = Bun.spawn([this._adbPath, ...args], {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+    const stdout = await new Response(proc.stdout).text();
+    await proc.exited;
+    return stdout;
+  }
+  async runCommandWithResult(args) {
+    if (!this._adbPath) {
+      return { success: false, exitCode: -1, stdout: "", stderr: "ADB not found" };
+    }
+    const proc = Bun.spawn([this._adbPath, ...args], {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    const exitCode = await proc.exited;
+    return { success: exitCode === 0, exitCode, stdout, stderr };
+  }
+}
+var init_AdbService = () => {};
+
+// src/adb/EmulatorService.ts
+var exports_EmulatorService = {};
+__export(exports_EmulatorService, {
+  EmulatorService: () => EmulatorService
+});
+
+class EmulatorService {
+  _adb;
+  constructor(_adb) {
+    this._adb = _adb;
+  }
+  async listAvds() {
+    const emulatorPath = this._adb.getEmulatorPath();
+    if (!emulatorPath)
+      return [];
+    const proc = Bun.spawn([emulatorPath, "-list-avds"], {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+    const output2 = await new Response(proc.stdout).text();
+    const names = parseAvdList(output2);
+    const devices = await this._adb.listDevices();
+    const runningEmulators = devices.filter((d) => d.type === "emulator");
+    return names.map((name) => {
+      const running = runningEmulators.find((e) => e.model?.includes(name) || e.serial.includes(name.toLowerCase().replace(/_/g, "")));
+      return {
+        name,
+        isRunning: !!running,
+        serial: running?.serial
+      };
+    });
+  }
+  async startEmulator(avdName) {
+    const emulatorPath = this._adb.getEmulatorPath();
+    if (!emulatorPath)
+      throw new Error("Emulator not found");
+    Bun.spawn([emulatorPath, "-avd", avdName, "-no-snapshot-load"], {
+      stdout: "ignore",
+      stderr: "ignore",
+      stdin: "ignore"
+    });
+  }
+  async stopEmulator(serial) {
+    await this._adb.killEmulator(serial);
+  }
+}
+var init_EmulatorService = () => {};
+
 // src/viewmodels/MainMenuViewModel.ts
 class MainMenuViewModel {
   forgeMenuOptions = [
     {
-      name: "Project Ledger",
+      name: "Projects",
       description: "Find, open, and switch Android projects",
       value: "projects"
     },
     {
-      name: "Smithy (Devices)",
+      name: "Devices",
       description: "Manage emulators and connected devices",
       value: "devices"
     },
     {
-      name: "Command Tongs (ADB)",
-      description: "Quick ADB actions without the finger burns",
+      name: "ADB Actions",
+      description: "Quick ADB commands for device management",
       value: "adb"
     },
     {
-      name: "Maker\u2019s Mark",
-      description: "About Droidforge, version, links",
+      name: "About",
+      description: "Version, credits, and links",
       value: "about"
     }
   ];
   anvilMenuOptions = [
     {
-      name: "Strike (Run)",
-      description: "Build \u2192 install \u2192 launch \u2192 open Logcat",
+      name: "Run App",
+      description: "Build, install, launch, and show logs",
       value: "actionoutputview:installDebug"
     },
     {
-      name: "Temper (Build)",
+      name: "Build",
       description: "Build the project without deploying",
       value: "actionoutputview:assembleDebug"
     },
     {
-      name: "Kiln View (App Logs)",
+      name: "App Logs",
       description: "App-focused Logcat (package/PID filtered)",
-      value: "kiln-view"
+      value: "app-logs"
     },
     {
-      name: "Foundry Logs (Device Logs)",
+      name: "Device Logs",
       description: "Full device Logcat with filters",
-      value: "foundry-logs"
+      value: "device-logs"
     },
     {
-      name: "Looking Glass (Mirror)",
-      description: "Mirror a physical device display",
-      value: "looking-glass"
-    },
-    {
-      name: "Hammer List (Pinned Tasks)",
-      description: "Your most-used Gradle tasks",
-      value: "hammer-list"
-    },
-    {
-      name: "Blueprints (All Tasks)",
-      description: "Browse/search every Gradle task in the project",
-      value: "blueprints"
+      name: "Screen Mirror",
+      description: "Mirror a device display via scrcpy",
+      value: "screen-mirror"
     }
   ];
   getMenuOptions(mode) {
@@ -7605,21 +7715,24 @@ class MainMenuViewModel {
 
 // src/viewmodels/DashboardViewModel.ts
 class DashboardViewModel {
-  getQuickStats() {
+  projectRepo;
+  constructor(projectRepo) {
+    this.projectRepo = projectRepo;
+  }
+  async getQuickStats() {
+    const projects = await this.projectRepo.getAllProjects();
     return {
-      projects: 12,
-      active: 3,
-      completed: 9,
-      templates: 25
+      projects: projects.length,
+      recent: projects.filter((p) => {
+        const dayAgo = new Date;
+        dayAgo.setDate(dayAgo.getDate() - 1);
+        return p.updatedAt && new Date(p.updatedAt) > dayAgo;
+      }).length
     };
   }
-  getRecentProjects() {
-    return [
-      "My Awesome App",
-      "Web Scraper Tool",
-      "API Client",
-      "Data Visualizer"
-    ];
+  async getRecentProjects(limit = 5) {
+    const projects = await this.projectRepo.getAllProjects();
+    return projects.slice(0, limit);
   }
 }
 
@@ -7728,26 +7841,6 @@ class ProjectsViewModel {
   }
 }
 
-// src/viewmodels/ToolsViewModel.ts
-class ToolsViewModel {
-  getCodeGenerators() {
-    return [
-      "API Client Generator",
-      "Database Schema Tool",
-      "Component Builder",
-      "Test Case Generator"
-    ];
-  }
-  getUtilities() {
-    return [
-      "Code Formatter",
-      "Dependency Checker",
-      "Performance Analyzer",
-      "Documentation Tool"
-    ];
-  }
-}
-
 // src/viewmodels/SettingsViewModel.ts
 class SettingsViewModel {
   themeManager;
@@ -7780,38 +7873,83 @@ class SettingsViewModel {
   }
 }
 
+// package.json
+var require_package = __commonJS((exports, module) => {
+  module.exports = {
+    name: "droidforge",
+    version: "0.1.0",
+    type: "module",
+    private: true,
+    bin: {
+      droidforge: "dist/cli.js"
+    },
+    scripts: {
+      dev: "bun run --watch src/index.ts",
+      build: "bun build src/cli.ts --outfile dist/cli.js --target bun --format esm --packages external",
+      test: "bun test"
+    },
+    devDependencies: {
+      "@types/bun": "latest"
+    },
+    peerDependencies: {
+      typescript: "^5"
+    },
+    dependencies: {
+      "@opentui/core": "^0.1.66",
+      "@types/sqlite3": "^5.1.0",
+      sqlite3: "^5.1.7"
+    }
+  };
+});
+
 // src/viewmodels/AboutViewModel.ts
 class AboutViewModel {
+  version;
+  constructor() {
+    try {
+      const pkg = require_package();
+      this.version = pkg.version || "dev";
+    } catch {
+      this.version = "dev";
+    }
+  }
   getAppInfo() {
     return {
-      name: "Droid Forge",
-      version: "1.0.0",
-      description: "A powerful development toolkit for building amazing applications with ease.",
-      builtWith: "Built with OpenTUI - Terminal UI Framework",
-      tagline: "Created for developers, by developers"
+      name: "Droidforge",
+      version: this.version,
+      description: "A terminal UI companion for Android development",
+      builtWith: "Built with OpenTUI",
+      tagline: "Neovim companion for Android development"
     };
   }
   getFeatures() {
     return [
-      "Interactive project management",
-      "Code generation tools",
-      "Built-in utilities",
-      "Extensible plugin system"
+      "Project management and switching",
+      "Gradle task runner with live output",
+      "Device and emulator management",
+      "Logcat streaming",
+      "30+ color themes"
     ];
   }
 }
 
 // src/viewmodels/ActionsViewModel.ts
 import fs5 from "fs";
+import path6 from "path";
 
 class ActionsViewModel {
+  _workspace;
   _menuMessage = null;
   _onMenuUpdate = null;
   _state = "idle";
   _output = { lines: [], scrollOffset: 0, exitCode: null };
   _outputWindowSize = 20;
   _currentProcess = null;
+  _lastCommand = null;
   _onOutputUpdate = null;
+  constructor(workspace) {
+    this._workspace = workspace;
+  }
   get state() {
     return this._state;
   }
@@ -7858,10 +7996,11 @@ class ActionsViewModel {
   async runGradleCommand(command) {
     this._state = "running";
     this._output = { lines: [], scrollOffset: 0, exitCode: null };
+    this._lastCommand = command;
     this._onOutputUpdate?.();
-    const cwd = process.cwd();
-    const detection = new ProjectDetection().detectAndroidProject(cwd);
-    if (!detection.isAndroidProject || !fs5.existsSync("gradlew")) {
+    const cwd = this._workspace.getCwd();
+    const detection = this._workspace.getDetection();
+    if (!detection.isAndroidProject || !fs5.existsSync(path6.join(cwd, "gradlew"))) {
       this._output.lines.push(`No Android Gradle project detected.
 ` + "Launch Droid Forge from your project root, or pass a path: droidforge /path/to/android/project");
       this._output.exitCode = 1;
@@ -7871,7 +8010,7 @@ class ActionsViewModel {
       return;
     }
     try {
-      const proc = Bun.spawn(["./gradlew", command, "--console=rich"], {
+      const proc = Bun.spawn(["./gradlew", command, "--console=plain"], {
         cwd,
         stdout: "pipe",
         stderr: "pipe",
@@ -7916,6 +8055,32 @@ class ActionsViewModel {
     this._output.scrollOffset = Math.min(maxOffset, this._output.scrollOffset + lines);
     this._onOutputUpdate?.();
   }
+  pageUp() {
+    const visibleLines = this._outputWindowSize;
+    this._output.scrollOffset = Math.max(0, this._output.scrollOffset - visibleLines);
+    this._onOutputUpdate?.();
+  }
+  pageDown() {
+    const visibleLines = this._outputWindowSize;
+    const maxOffset = Math.max(0, this._output.lines.length - visibleLines);
+    this._output.scrollOffset = Math.min(maxOffset, this._output.scrollOffset + visibleLines);
+    this._onOutputUpdate?.();
+  }
+  scrollToTop() {
+    this._output.scrollOffset = 0;
+    this._onOutputUpdate?.();
+  }
+  scrollToBottom() {
+    const visibleLines = this._outputWindowSize;
+    this._output.scrollOffset = Math.max(0, this._output.lines.length - visibleLines);
+    this._onOutputUpdate?.();
+  }
+  rerun() {
+    if (this._lastCommand) {
+      this.reset();
+      this.runGradleCommand(this._lastCommand);
+    }
+  }
   getOutputText() {
     return this._output.lines.join(`
 `);
@@ -7926,9 +8091,9 @@ class ActionsViewModel {
     this._currentProcess = null;
   }
   isGradleProject() {
-    const cwd = process.cwd();
-    const detection = new ProjectDetection().detectAndroidProject(cwd);
-    const hasGradleWrapper = fs5.existsSync("gradlew");
+    const cwd = this._workspace.getCwd();
+    const detection = this._workspace.getDetection();
+    const hasGradleWrapper = fs5.existsSync(path6.join(cwd, "gradlew"));
     if (!detection.isAndroidProject || !hasGradleWrapper) {
       this._menuMessage = `No Android Gradle project detected. Launch Droid Forge from your project root,
 ` + "or pass a path: droidforge /path/to/android/project";
@@ -7946,24 +8111,49 @@ class ActionsViewModel {
       if (done)
         break;
       pending += decoder.decode(value, { stream: true });
-      pending = pending.replace(/\r\n/g, `
-`).replace(/\r/g, `
-`);
       const parts = pending.split(`
 `);
       pending = parts.pop();
       for (const line of parts) {
         if (line.trim()) {
-          this._output.lines.push(line);
+          this._output.lines.push(this.colorizeLine(line));
         }
       }
       this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
       this._onOutputUpdate?.();
     }
     if (pending.trim()) {
-      this._output.lines.push(pending);
+      this._output.lines.push(this.colorizeLine(pending));
       this._onOutputUpdate?.();
     }
+  }
+  colorizeLine(line) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("WARNING:")) {
+      return `\x1B[33m${line}\x1B[0m`;
+    }
+    if (trimmed.startsWith("> Task ")) {
+      if (trimmed.endsWith("UP-TO-DATE")) {
+        return `\x1B[36m${line}\x1B[0m`;
+      }
+      if (trimmed.endsWith("SKIPPED")) {
+        return `\x1B[90m${line}\x1B[0m`;
+      }
+      if (trimmed.endsWith("NO-SOURCE")) {
+        return `\x1B[90m${line}\x1B[0m`;
+      }
+      if (trimmed.endsWith("FAILED")) {
+        return `\x1B[31m${line}\x1B[0m`;
+      }
+      return `\x1B[32m${line}\x1B[0m`;
+    }
+    if (trimmed.startsWith("BUILD SUCCESSFUL")) {
+      return `\x1B[1;32m${line}\x1B[0m`;
+    }
+    if (trimmed.startsWith("BUILD FAILED")) {
+      return `\x1B[1;31m${line}\x1B[0m`;
+    }
+    return line;
   }
 }
 var NO_GRADLE_VALUE = "__no-gradle__", CURATED_ACTIONS;
@@ -7977,6 +8167,7 @@ var init_ActionsViewModel = __esm(() => {
 
 // src/viewmodels/GradleViewModel.ts
 import fs6 from "fs";
+import path7 from "path";
 var SHOW_ALL_TASKS_VALUE = "__show-all-tasks__", SHOW_CURATED_TASKS_VALUE = "__show-curated-tasks__", RETRY_TASK_DISCOVERY_VALUE = "__retry-task-discovery__", NO_GRADLE_VALUE2 = "__no-gradle__", CURATED_TASKS, CURATED_TASK_LABELS, GradleViewModel;
 var init_GradleViewModel = __esm(() => {
   CURATED_TASKS = [
@@ -8003,6 +8194,7 @@ var init_GradleViewModel = __esm(() => {
   };
   GradleViewModel = class GradleViewModel {
     static taskCache = new Map;
+    _workspace;
     _menuState = "loading";
     _menuMessage = null;
     _tasks = [];
@@ -8010,7 +8202,8 @@ var init_GradleViewModel = __esm(() => {
     _showToggle = true;
     _tasksLoadPromise = null;
     _onMenuUpdate = null;
-    constructor(options = {}) {
+    constructor(workspace, options = {}) {
+      this._workspace = workspace;
       this._showAllTasks = options.mode === "all";
       this._showToggle = options.showToggle ?? true;
       this.loadGradleTasks();
@@ -8091,7 +8284,7 @@ var init_GradleViewModel = __esm(() => {
         this._menuState = "loading";
         this._menuMessage = null;
         this.notifyMenuUpdate();
-        const cwd = process.cwd();
+        const cwd = this._workspace.getCwd();
         const cachedTasks = GradleViewModel.taskCache.get(cwd);
         if (cachedTasks) {
           this._tasks = cachedTasks;
@@ -8100,8 +8293,8 @@ var init_GradleViewModel = __esm(() => {
           this.notifyMenuUpdate();
           return;
         }
-        const detection = new ProjectDetection().detectAndroidProject(cwd);
-        const hasGradleWrapper = fs6.existsSync("gradlew");
+        const detection = this._workspace.getDetection();
+        const hasGradleWrapper = fs6.existsSync(path7.join(cwd, "gradlew"));
         if (!detection.isAndroidProject || !hasGradleWrapper) {
           this._menuState = "not-gradle";
           this._menuMessage = `No Android Gradle project detected. Launch Droid Forge from your project root,
@@ -8221,22 +8414,620 @@ var init_GradleViewModel = __esm(() => {
   };
 });
 
+// src/viewmodels/DevicesViewModel.ts
+class DevicesViewModel {
+  _adb;
+  _emulator;
+  _devices = [];
+  _avds = [];
+  _loading = true;
+  _error = null;
+  _onMenuUpdate = null;
+  constructor(_adb, _emulator) {
+    this._adb = _adb;
+    this._emulator = _emulator;
+    this.refresh();
+  }
+  setMenuUpdateCallback(callback) {
+    this._onMenuUpdate = callback;
+    this._onMenuUpdate?.();
+  }
+  get isLoading() {
+    return this._loading;
+  }
+  getError() {
+    return this._error;
+  }
+  async refresh() {
+    this._loading = true;
+    this._error = null;
+    this._onMenuUpdate?.();
+    try {
+      if (!this._adb.isAvailable()) {
+        this._error = "ADB not found. Install Android SDK platform-tools.";
+        this._devices = [];
+        this._avds = [];
+      } else {
+        this._devices = await this._adb.listDevices();
+        this._avds = await this._emulator.listAvds();
+      }
+    } catch (err) {
+      this._error = err instanceof Error ? err.message : "Failed to load devices";
+    }
+    this._loading = false;
+    this._onMenuUpdate?.();
+  }
+  async startEmulator(avdName) {
+    await this._emulator.startEmulator(avdName);
+    await new Promise((r) => setTimeout(r, 2000));
+    await this.refresh();
+    const running = this._avds.find((a) => a.name === avdName && a.isRunning);
+    return running?.serial ?? "";
+  }
+  async stopEmulator(serial) {
+    await this._emulator.stopEmulator(serial);
+    await this.refresh();
+  }
+  getDevices() {
+    return this._devices;
+  }
+  getAvds() {
+    return this._avds;
+  }
+  getMenuOptions() {
+    if (this._loading) {
+      return [{ name: "Loading...", value: "__loading__", disabled: true }];
+    }
+    if (this._error) {
+      return [{ name: `Error: ${this._error}`, value: "__error__", disabled: true }];
+    }
+    const options = [];
+    if (this._devices.length > 0) {
+      options.push({ name: "\u2500\u2500 Connected Devices \u2500\u2500", value: "__header__", disabled: true });
+      for (const device of this._devices) {
+        const statusIcon = device.status === "device" ? "\u25CF" : "\u25CB";
+        const typeLabel = device.type === "emulator" ? "emulator" : "device";
+        options.push({
+          name: `${statusIcon} ${device.model || device.serial}`,
+          description: `${device.status} | ${typeLabel}`,
+          value: `device:${device.serial}`
+        });
+      }
+    }
+    if (this._avds.length > 0) {
+      options.push({ name: "\u2500\u2500 Available Emulators \u2500\u2500", value: "__header__", disabled: true });
+      for (const avd of this._avds) {
+        const statusIcon = avd.isRunning ? "\u25CF" : "\u25CB";
+        const statusText = avd.isRunning ? `Running (${avd.serial})` : "Stopped";
+        options.push({
+          name: `${statusIcon} ${avd.name}`,
+          description: statusText,
+          value: avd.isRunning ? `stop-emulator:${avd.serial}` : `start-emulator:${avd.name}`
+        });
+      }
+    }
+    if (options.length === 0) {
+      options.push({ name: "No devices or emulators found", value: "__empty__", disabled: true });
+    }
+    options.push({ name: "\u2500\u2500 Actions \u2500\u2500", value: "__header__", disabled: true });
+    options.push({ name: "Refresh", description: "Reload device list", value: "refresh" });
+    return options;
+  }
+  async handleMenuSelection(value) {
+    if (value === "refresh") {
+      await this.refresh();
+      return { action: "refreshed" };
+    }
+    if (value.startsWith("start-emulator:")) {
+      const avdName = value.slice("start-emulator:".length);
+      const serial = await this.startEmulator(avdName);
+      return { action: "emulator-started", data: serial };
+    }
+    if (value.startsWith("stop-emulator:")) {
+      const serial = value.slice("stop-emulator:".length);
+      await this.stopEmulator(serial);
+      return { action: "emulator-stopped" };
+    }
+    if (value.startsWith("device:")) {
+      const serial = value.slice("device:".length);
+      return { action: "device-selected", data: serial };
+    }
+    return { action: "none" };
+  }
+}
+
+// src/viewmodels/MirrorViewModel.ts
+class MirrorViewModel {
+  _adb;
+  _devices = [];
+  _selectedDevice = null;
+  _scrcpyPath = null;
+  _loading = false;
+  _error = null;
+  _message = null;
+  _onMenuUpdate = null;
+  constructor(_adb) {
+    this._adb = _adb;
+    this._scrcpyPath = Bun.which("scrcpy");
+    this.loadDevices();
+  }
+  setMenuUpdateCallback(callback) {
+    this._onMenuUpdate = callback;
+  }
+  notifyUpdate() {
+    this._onMenuUpdate?.();
+  }
+  hasScrcpy() {
+    return this._scrcpyPath !== null;
+  }
+  async loadDevices() {
+    if (!this._adb.isAvailable()) {
+      this._error = "ADB not found";
+      this.notifyUpdate();
+      return;
+    }
+    this._loading = true;
+    this.notifyUpdate();
+    try {
+      const devices = await this._adb.listDevices();
+      this._devices = devices.filter((d) => d.status === "device").map((d) => ({ serial: d.serial, model: d.model || d.serial }));
+      if (this._devices.length === 1 && this._devices[0]) {
+        this._selectedDevice = this._devices[0].serial;
+      }
+    } catch (err) {
+      this._error = err instanceof Error ? err.message : "Failed to load devices";
+    }
+    this._loading = false;
+    this.notifyUpdate();
+  }
+  getDevices() {
+    return this._devices;
+  }
+  getSelectedDevice() {
+    return this._selectedDevice;
+  }
+  getMessage() {
+    return this._message;
+  }
+  selectDevice(serial) {
+    this._selectedDevice = serial;
+    this.notifyUpdate();
+  }
+  getMenuOptions() {
+    if (this._loading) {
+      return [{ name: "Loading...", value: "__loading__", disabled: true }];
+    }
+    if (!this.hasScrcpy()) {
+      return [
+        { name: "scrcpy not found", description: "Install: brew install scrcpy", value: "__error__", disabled: true }
+      ];
+    }
+    if (this._error) {
+      return [{ name: `Error: ${this._error}`, value: "__error__", disabled: true }];
+    }
+    const options = [];
+    if (this._devices.length === 0) {
+      return [{ name: "No devices connected", value: "__empty__", disabled: true }];
+    }
+    if (this._devices.length > 1) {
+      options.push({ name: "\u2500\u2500 Select Device \u2500\u2500", value: "__header__", disabled: true });
+      for (const device of this._devices) {
+        const selected = device.serial === this._selectedDevice ? "\u25CF " : "\u25CB ";
+        options.push({
+          name: `${selected}${device.model}`,
+          description: device.serial,
+          value: `select-device:${device.serial}`
+        });
+      }
+      options.push({ name: "", value: "__spacer__", disabled: true });
+    }
+    if (this._selectedDevice) {
+      options.push({
+        name: "Start Mirroring",
+        description: "Launch scrcpy to mirror device screen",
+        value: "start-mirror"
+      });
+    }
+    if (this._message) {
+      options.push({ name: "", value: "__spacer__", disabled: true });
+      options.push({ name: this._message, value: "__message__", disabled: true });
+    }
+    return options;
+  }
+  handleMenuSelection(value) {
+    if (value.startsWith("select-device:")) {
+      const serial = value.slice("select-device:".length);
+      this.selectDevice(serial);
+      return { action: "device-selected" };
+    }
+    if (value === "start-mirror" && this._selectedDevice && this._scrcpyPath) {
+      Bun.spawn([this._scrcpyPath, "--serial", this._selectedDevice, "--no-audio"], {
+        stdio: ["ignore", "ignore", "ignore"]
+      });
+      this._message = "Mirroring started in separate window";
+      this.notifyUpdate();
+      return { action: "mirroring-started" };
+    }
+    return { action: "none" };
+  }
+}
+
+// src/utilities/logcatParser.ts
+function parseLogcatLine(line) {
+  const threadtimeMatch = line.match(/^(\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEF])\s+([^:]+):\s*(.*)$/);
+  if (threadtimeMatch) {
+    return {
+      raw: line,
+      timestamp: threadtimeMatch[1],
+      pid: parseInt(threadtimeMatch[2], 10),
+      tid: parseInt(threadtimeMatch[3], 10),
+      level: threadtimeMatch[4],
+      tag: threadtimeMatch[5].trim(),
+      message: threadtimeMatch[6]
+    };
+  }
+  const briefMatch = line.match(/^([VDIWEF])\/([^\(]+)\((\d+)\):\s*(.*)$/);
+  if (briefMatch) {
+    return {
+      raw: line,
+      pid: parseInt(briefMatch[3], 10),
+      level: briefMatch[1],
+      tag: briefMatch[2].trim(),
+      message: briefMatch[4]
+    };
+  }
+  return {
+    raw: line,
+    level: "?",
+    message: line
+  };
+}
+function colorizeLogLevel(level) {
+  const colors = {
+    V: "\x1B[90m",
+    D: "\x1B[36m",
+    I: "\x1B[32m",
+    W: "\x1B[33m",
+    E: "\x1B[31m",
+    F: "\x1B[35m",
+    "?": "\x1B[0m"
+  };
+  return colors[level] ?? "\x1B[0m";
+}
+function formatLogcatLine(line) {
+  const color = colorizeLogLevel(line.level);
+  const reset = "\x1B[0m";
+  if (line.tag) {
+    return `${color}${line.level}/${line.tag}${reset}: ${line.message}`;
+  }
+  return `${color}${line.message}${reset}`;
+}
+var init_logcatParser = () => {};
+
+// src/viewmodels/LogcatViewModel.ts
+class LogcatViewModel {
+  _adb;
+  _state = "idle";
+  _output = { lines: [], scrollOffset: 0, exitCode: null };
+  _currentProcess = null;
+  _onOutputUpdate = null;
+  _outputWindowSize = 20;
+  _filterText = "";
+  _maxLines = 5000;
+  _config = {};
+  constructor(_adb) {
+    this._adb = _adb;
+  }
+  setOutputUpdateCallback(callback) {
+    this._onOutputUpdate = callback;
+  }
+  setOutputWindowSize(size) {
+    this._outputWindowSize = size;
+  }
+  get state() {
+    return this._state;
+  }
+  get output() {
+    return this._output;
+  }
+  setConfig(config) {
+    this._config = config;
+  }
+  async startStream() {
+    if (this._state === "running")
+      return;
+    const { deviceId, packageName, logLevel = "V" } = this._config;
+    if (!deviceId) {
+      this._state = "error";
+      this._onOutputUpdate?.();
+      return;
+    }
+    const args = ["-v", "threadtime"];
+    if (packageName) {
+      const pid = await this._adb.getPackagePid(deviceId, packageName);
+      if (pid) {
+        args.push("--pid", String(pid));
+      }
+    }
+    args.push(`*:${logLevel}`);
+    this._state = "running";
+    this._output = { lines: [], scrollOffset: 0, exitCode: null };
+    this._onOutputUpdate?.();
+    this._currentProcess = this._adb.spawnLogcat(deviceId, args);
+    this.streamOutput(this._currentProcess.stdout);
+    this.streamOutput(this._currentProcess.stderr);
+  }
+  async streamOutput(stream) {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder;
+    let pending = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done)
+        break;
+      pending += decoder.decode(value, { stream: true });
+      const parts = pending.split(`
+`);
+      pending = parts.pop() ?? "";
+      for (const line of parts) {
+        if (line.trim() && this._state !== "paused") {
+          this.addLine(line);
+        }
+      }
+      this._onOutputUpdate?.();
+    }
+  }
+  addLine(rawLine) {
+    const parsed = parseLogcatLine(rawLine);
+    this._output.lines.push(parsed);
+    if (this._output.lines.length > this._maxLines) {
+      const excess = this._output.lines.length - this._maxLines;
+      this._output.lines.splice(0, excess);
+      this._output.scrollOffset = Math.max(0, this._output.scrollOffset - excess);
+    }
+    this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+  }
+  pauseStream() {
+    this._state = "paused";
+    this._onOutputUpdate?.();
+  }
+  resumeStream() {
+    this._state = "running";
+    this._onOutputUpdate?.();
+  }
+  stopStream() {
+    if (this._currentProcess) {
+      this._currentProcess.kill();
+      this._currentProcess = null;
+    }
+    this._state = "idle";
+    this._onOutputUpdate?.();
+  }
+  clearBuffer() {
+    this._output.lines = [];
+    this._output.scrollOffset = 0;
+    this._onOutputUpdate?.();
+  }
+  scrollUp(lines = 1) {
+    this._output.scrollOffset = Math.max(0, this._output.scrollOffset - lines);
+    this._onOutputUpdate?.();
+  }
+  scrollDown(lines = 1) {
+    const maxOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+    this._output.scrollOffset = Math.min(maxOffset, this._output.scrollOffset + lines);
+    this._onOutputUpdate?.();
+  }
+  pageUp() {
+    this.scrollUp(this._outputWindowSize);
+  }
+  pageDown() {
+    this.scrollDown(this._outputWindowSize);
+  }
+  scrollToTop() {
+    this._output.scrollOffset = 0;
+    this._onOutputUpdate?.();
+  }
+  scrollToBottom() {
+    this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+    this._onOutputUpdate?.();
+  }
+  getVisibleLines() {
+    return this._output.lines.slice(this._output.scrollOffset, this._output.scrollOffset + this._outputWindowSize);
+  }
+  getOutputText() {
+    return this._output.lines.map((l) => l.raw).join(`
+`);
+  }
+}
+var init_LogcatViewModel = __esm(() => {
+  init_logcatParser();
+});
+
+// src/viewmodels/AdbActionsViewModel.ts
+class AdbActionsViewModel {
+  _adb;
+  _workspace;
+  _devices = [];
+  _selectedDevice = null;
+  _packages = [];
+  _loading = false;
+  _error = null;
+  _onMenuUpdate = null;
+  constructor(_adb, _workspace) {
+    this._adb = _adb;
+    this._workspace = _workspace;
+    this.loadDevices();
+  }
+  setMenuUpdateCallback(callback) {
+    this._onMenuUpdate = callback;
+  }
+  notifyUpdate() {
+    this._onMenuUpdate?.();
+  }
+  getSelectedDevice() {
+    return this._selectedDevice;
+  }
+  async loadDevices() {
+    if (!this._adb.isAvailable()) {
+      this._error = "ADB not found";
+      this.notifyUpdate();
+      return;
+    }
+    this._loading = true;
+    this.notifyUpdate();
+    try {
+      const devices = await this._adb.listDevices();
+      this._devices = devices.filter((d) => d.status === "device").map((d) => ({ serial: d.serial, model: d.model ?? d.serial }));
+      if (this._devices.length === 1 && this._devices[0]) {
+        this._selectedDevice = this._devices[0].serial;
+        await this.loadPackages();
+      }
+    } catch (err) {
+      this._error = err instanceof Error ? err.message : "Failed to load devices";
+    }
+    this._loading = false;
+    this.notifyUpdate();
+  }
+  async selectDevice(serial) {
+    this._selectedDevice = serial;
+    await this.loadPackages();
+  }
+  async loadPackages() {
+    if (!this._selectedDevice)
+      return;
+    try {
+      this._packages = await this._adb.listPackages(this._selectedDevice, true);
+    } catch {
+      this._packages = [];
+    }
+    this.notifyUpdate();
+  }
+  getPackages() {
+    return this._packages;
+  }
+  getMenuOptions() {
+    if (this._loading) {
+      return [{ name: "Loading...", value: "__loading__", disabled: true }];
+    }
+    if (this._error) {
+      return [{ name: `Error: ${this._error}`, value: "__error__", disabled: true }];
+    }
+    const options = [];
+    if (this._devices.length === 0) {
+      return [{ name: "No devices connected", value: "__empty__", disabled: true }];
+    }
+    if (this._devices.length > 1) {
+      options.push({ name: "\u2500\u2500 Select Device \u2500\u2500", value: "__header__", disabled: true });
+      for (const device of this._devices) {
+        const selected = device.serial === this._selectedDevice ? "\u25CF " : "\u25CB ";
+        options.push({
+          name: `${selected}${device.model}`,
+          description: device.serial,
+          value: `select-device:${device.serial}`
+        });
+      }
+      options.push({ name: "", value: "__spacer__", disabled: true });
+    }
+    if (this._selectedDevice) {
+      options.push({ name: "\u2500\u2500 App Actions \u2500\u2500", value: "__header__", disabled: true });
+      const projectPath = this._workspace.getCwd();
+      const hasApk = projectPath;
+      options.push({
+        name: "Install APK",
+        description: hasApk ? "Install from project build" : "Install APK file",
+        value: "install-apk"
+      });
+      options.push({
+        name: "Uninstall Package",
+        description: "Remove an installed app",
+        value: "uninstall-package"
+      });
+      options.push({
+        name: "Clear App Data",
+        description: "Clear data and cache",
+        value: "clear-data"
+      });
+      options.push({
+        name: "Force Stop App",
+        description: "Kill a running app",
+        value: "force-stop"
+      });
+      options.push({ name: "\u2500\u2500 Device Actions \u2500\u2500", value: "__header__", disabled: true });
+      options.push({
+        name: "Take Screenshot",
+        description: "Save screenshot to device",
+        value: "screenshot"
+      });
+      options.push({
+        name: "Reboot Device",
+        description: "Restart the device",
+        value: "reboot"
+      });
+    }
+    return options;
+  }
+  async handleMenuSelection(value) {
+    if (value.startsWith("select-device:")) {
+      const serial = value.slice("select-device:".length);
+      await this.selectDevice(serial);
+      return { action: "device-selected" };
+    }
+    if (!this._selectedDevice) {
+      return { action: "no-device" };
+    }
+    switch (value) {
+      case "install-apk":
+        return { action: "navigate", command: `adb-install:${this._selectedDevice}` };
+      case "uninstall-package":
+        return { action: "navigate", command: `adb-uninstall:${this._selectedDevice}` };
+      case "clear-data":
+        return { action: "navigate", command: `adb-clear:${this._selectedDevice}` };
+      case "force-stop":
+        return { action: "navigate", command: `adb-forcestop:${this._selectedDevice}` };
+      case "screenshot":
+        return { action: "navigate", command: `adb-screenshot:${this._selectedDevice}` };
+      case "reboot":
+        return { action: "navigate", command: `adb-reboot:${this._selectedDevice}` };
+      default:
+        return { action: "none" };
+    }
+  }
+}
+
 // src/viewmodels/index.ts
 var exports_viewmodels = {};
 __export(exports_viewmodels, {
-  ToolsViewModel: () => ToolsViewModel,
   SettingsViewModel: () => SettingsViewModel,
   ProjectsViewModel: () => ProjectsViewModel,
+  MirrorViewModel: () => MirrorViewModel,
   MainMenuViewModel: () => MainMenuViewModel,
+  LogcatViewModel: () => LogcatViewModel,
   GradleViewModel: () => GradleViewModel,
+  DevicesViewModel: () => DevicesViewModel,
   DashboardViewModel: () => DashboardViewModel,
+  AdbActionsViewModel: () => AdbActionsViewModel,
   ActionsViewModel: () => ActionsViewModel,
   AboutViewModel: () => AboutViewModel
 });
 var init_viewmodels = __esm(() => {
   init_ActionsViewModel();
   init_GradleViewModel();
+  init_LogcatViewModel();
 });
+
+// src/tooling/ToolingService.ts
+class NoOpToolingService {
+  async getDiagnostics() {
+    return { errors: 0, warnings: 0, infos: 0 };
+  }
+}
+
+// src/tooling/index.ts
+var exports_tooling = {};
+__export(exports_tooling, {
+  NoOpToolingService: () => NoOpToolingService
+});
+var init_tooling = () => {};
 
 // src/di/container.ts
 class DIContainer {
@@ -8263,32 +9054,45 @@ class DIContainer {
     throw new Error(`No registration found for key: ${key}`);
   }
 }
-async function setupDIModules() {
+async function setupDIModules(workspace) {
   const { Database: Database2, ProjectRepository: ProjectRepository2 } = await Promise.resolve().then(() => (init_repositories(), exports_repositories));
   const { ThemeManager: ThemeManager2 } = await Promise.resolve().then(() => (init_theme(), exports_theme));
+  const { AdbService: AdbService2 } = await Promise.resolve().then(() => (init_AdbService(), exports_AdbService));
+  const { EmulatorService: EmulatorService2 } = await Promise.resolve().then(() => (init_EmulatorService(), exports_EmulatorService));
   const {
     MainMenuViewModel: MainMenuViewModel2,
     DashboardViewModel: DashboardViewModel2,
     ProjectsViewModel: ProjectsViewModel2,
-    ToolsViewModel: ToolsViewModel2,
     SettingsViewModel: SettingsViewModel2,
     AboutViewModel: AboutViewModel2,
     ActionsViewModel: ActionsViewModel2,
-    GradleViewModel: GradleViewModel2
+    GradleViewModel: GradleViewModel2,
+    DevicesViewModel: DevicesViewModel2,
+    MirrorViewModel: MirrorViewModel2,
+    LogcatViewModel: LogcatViewModel2,
+    AdbActionsViewModel: AdbActionsViewModel2
   } = await Promise.resolve().then(() => (init_viewmodels(), exports_viewmodels));
   diContainer.single("Database", () => new Database2);
   diContainer.single("ProjectRepository", () => new ProjectRepository2(diContainer.get("Database")));
-  diContainer.single("ThemeManager", () => new ThemeManager2);
+  diContainer.single("ThemeManager", () => new ThemeManager2(diContainer.get("WorkspaceService")));
+  diContainer.single("WorkspaceService", () => workspace);
+  diContainer.single("AdbService", () => new AdbService2);
+  diContainer.single("EmulatorService", () => new EmulatorService2(diContainer.get("AdbService")));
+  const { NoOpToolingService: NoOpToolingService2 } = await Promise.resolve().then(() => (init_tooling(), exports_tooling));
+  diContainer.single("ToolingService", () => new NoOpToolingService2);
   diContainer.factory("MainMenuViewModel", () => new MainMenuViewModel2);
-  diContainer.factory("DashboardViewModel", () => new DashboardViewModel2);
+  diContainer.factory("DashboardViewModel", () => new DashboardViewModel2(diContainer.get("ProjectRepository")));
   diContainer.single("ProjectsViewModel", () => new ProjectsViewModel2(diContainer.get("ProjectRepository")));
-  diContainer.factory("ToolsViewModel", () => new ToolsViewModel2);
   diContainer.factory("SettingsViewModel", () => new SettingsViewModel2(diContainer.get("ThemeManager")));
   diContainer.factory("AboutViewModel", () => new AboutViewModel2);
-  diContainer.factory("ActionsViewModel", () => new ActionsViewModel2);
-  diContainer.factory("GradleViewModel", () => new GradleViewModel2);
-  diContainer.factory("HammerListViewModel", () => new GradleViewModel2({ mode: "curated", showToggle: false }));
-  diContainer.factory("BlueprintsViewModel", () => new GradleViewModel2({ mode: "all", showToggle: false }));
+  diContainer.factory("ActionsViewModel", () => new ActionsViewModel2(workspace));
+  diContainer.factory("GradleViewModel", () => new GradleViewModel2(workspace));
+  diContainer.factory("DevicesViewModel", () => new DevicesViewModel2(diContainer.get("AdbService"), diContainer.get("EmulatorService")));
+  diContainer.factory("MirrorViewModel", () => new MirrorViewModel2(diContainer.get("AdbService")));
+  diContainer.factory("LogcatViewModel", () => new LogcatViewModel2(diContainer.get("AdbService")));
+  diContainer.factory("AdbActionsViewModel", () => new AdbActionsViewModel2(diContainer.get("AdbService"), diContainer.get("WorkspaceService")));
+  diContainer.factory("HammerListViewModel", () => new GradleViewModel2(workspace, { mode: "curated", showToggle: false }));
+  diContainer.factory("BlueprintsViewModel", () => new GradleViewModel2(workspace, { mode: "all", showToggle: false }));
 }
 var diContainer;
 var init_container = __esm(() => {
@@ -8298,6 +9102,141 @@ var init_container = __esm(() => {
 // src/di/index.ts
 var init_di = __esm(() => {
   init_container();
+});
+
+// src/utilities/projectDetection.ts
+class ProjectDetection {
+  findAndroidProjectRoot(startDir) {
+    const fs7 = __require("fs");
+    const path8 = __require("path");
+    let currentDir = path8.resolve(startDir || process.cwd());
+    while (true) {
+      const hasSettings = fs7.existsSync(path8.join(currentDir, "settings.gradle")) || fs7.existsSync(path8.join(currentDir, "settings.gradle.kts"));
+      if (hasSettings)
+        return currentDir;
+      const parentDir = path8.dirname(currentDir);
+      if (parentDir === currentDir)
+        return null;
+      currentDir = parentDir;
+    }
+  }
+  detectAndroidProject(dir) {
+    const fs7 = __require("fs");
+    const path8 = __require("path");
+    const projectRoot = this.findAndroidProjectRoot(dir || process.cwd());
+    if (!projectRoot) {
+      return { isAndroidProject: false, confidence: "high", projectRoot: null };
+    }
+    const androidPlugins = [
+      "com.android.application",
+      "com.android.library",
+      "com.android.dynamic-feature"
+    ];
+    const buildFiles = [
+      "build.gradle",
+      "build.gradle.kts",
+      "app/build.gradle",
+      "app/build.gradle.kts"
+    ];
+    const versionCatalog = "gradle/libs.versions.toml";
+    let foundAndroidPlugin = false;
+    let projectType = "unknown";
+    const tomlPath = path8.join(projectRoot, versionCatalog);
+    if (fs7.existsSync(tomlPath)) {
+      const content = fs7.readFileSync(tomlPath, "utf8");
+      for (const plugin of androidPlugins) {
+        if (content.includes(`id = "${plugin}"`)) {
+          foundAndroidPlugin = true;
+          projectType = plugin.includes("application") ? "application" : plugin.includes("library") ? "library" : "unknown";
+          break;
+        }
+      }
+    }
+    if (!foundAndroidPlugin) {
+      for (const file of buildFiles) {
+        const filePath = path8.join(projectRoot, file);
+        if (!fs7.existsSync(filePath))
+          continue;
+        const content = fs7.readFileSync(filePath, "utf8");
+        for (const plugin of androidPlugins) {
+          if (content.includes(`'${plugin}'`) || content.includes(`"${plugin}"`) || content.includes(`id("${plugin}")`)) {
+            foundAndroidPlugin = true;
+            projectType = plugin.includes("application") ? "application" : plugin.includes("library") ? "library" : "unknown";
+            break;
+          }
+        }
+        if (!foundAndroidPlugin) {
+          const aliasPatterns = [
+            { pattern: /alias\(libs\.plugins\.android\.application\)/, type: "application" },
+            { pattern: /alias\(libs\.plugins\.android\.library\)/, type: "library" },
+            { pattern: /alias\(libs\.plugins\.com\.android\.application\)/, type: "application" },
+            { pattern: /alias\(libs\.plugins\.com\.android\.library\)/, type: "library" }
+          ];
+          for (const { pattern, type } of aliasPatterns) {
+            if (pattern.test(content)) {
+              foundAndroidPlugin = true;
+              projectType = type;
+              break;
+            }
+          }
+        }
+        if (foundAndroidPlugin)
+          break;
+      }
+    }
+    return {
+      isAndroidProject: foundAndroidPlugin || Boolean(projectRoot),
+      projectType,
+      confidence: foundAndroidPlugin ? "high" : projectRoot ? "medium" : "low",
+      projectRoot
+    };
+  }
+}
+
+// src/workspace/WorkspaceService.ts
+import path8 from "path";
+
+class WorkspaceService {
+  _cwd;
+  _detection;
+  _detector = new ProjectDetection;
+  constructor(cwd) {
+    this._cwd = path8.resolve(cwd);
+    this._detection = this._detector.detectAndroidProject(this._cwd);
+  }
+  updateCwd(cwd) {
+    this._cwd = path8.resolve(cwd);
+    this._detection = this._detector.detectAndroidProject(this._cwd);
+  }
+  getCwd() {
+    return this._cwd;
+  }
+  getRoot() {
+    return this._detection.projectRoot;
+  }
+  getDetection() {
+    return this._detection;
+  }
+  getRootUri() {
+    const root = this._detection.projectRoot;
+    if (!root)
+      return null;
+    return pathToFileUri(root);
+  }
+  get isAndroidProject() {
+    return this._detection.isAndroidProject;
+  }
+}
+function pathToFileUri(filePath) {
+  const normalized = path8.resolve(filePath).replace(/\\/g, "/");
+  const withLeading = normalized.startsWith("/") ? normalized : `/${normalized}`;
+  return `file://${withLeading}`;
+}
+var init_WorkspaceService = () => {};
+
+// src/workspace/index.ts
+var init_workspace = __esm(() => {
+  init_WorkspaceService();
 });
 
 // src/utilities/renderer.ts
@@ -8389,15 +9328,19 @@ class NavigationManager {
   canGoBack() {
     return this.viewStack.length > 1;
   }
+  clear() {
+    this.currentView = "menu";
+    this.viewStack = ["menu"];
+  }
 }
 
 // src/utilities/androidProjectName.ts
 import fs7 from "fs";
-import path6 from "path";
+import path9 from "path";
 function getAndroidProjectName(projectRoot) {
   const settingsCandidates = ["settings.gradle.kts", "settings.gradle"];
   for (const settingsFile of settingsCandidates) {
-    const filePath = path6.join(projectRoot, settingsFile);
+    const filePath = path9.join(projectRoot, settingsFile);
     if (!fs7.existsSync(filePath))
       continue;
     try {
@@ -8410,15 +9353,15 @@ function getAndroidProjectName(projectRoot) {
       }
     } catch {}
   }
-  return path6.basename(projectRoot);
+  return path9.basename(projectRoot);
 }
 var init_androidProjectName = () => {};
 
 // src/utilities/projectMemory.ts
 import crypto from "crypto";
-import path7 from "path";
+import path10 from "path";
 function normalizeProjectPath(projectPath) {
-  return path7.resolve(projectPath);
+  return path10.resolve(projectPath);
 }
 function projectIdFromPath(projectPath) {
   const normalized = normalizeProjectPath(projectPath);
@@ -8672,6 +9615,25 @@ var init_utilities = __esm(() => {
   init_ansiToStyledText();
 });
 
+// src/ui/constants.ts
+var SPACING, LAYOUT;
+var init_constants = __esm(() => {
+  SPACING = {
+    NONE: 0,
+    TIGHT: 0.5,
+    NORMAL: 1,
+    COMFORTABLE: 2
+  };
+  LAYOUT = {
+    PANEL_MARGIN: SPACING.COMFORTABLE,
+    PANEL_PADDING: SPACING.NORMAL,
+    HEADER_MARGIN_BOTTOM: SPACING.NORMAL,
+    HEADER_MARGIN_LEFT: SPACING.NORMAL,
+    CONTENT_MAX_WIDTH: 70,
+    FOOTER_HEIGHT: 2
+  };
+});
+
 // src/ui/components/Header.ts
 import { ASCIIFont, BoxRenderable, Text, TextAttributes as TextAttributes2 } from "@opentui/core";
 function MainHeader(renderer, title, subtitle, theme) {
@@ -8703,33 +9665,38 @@ function MainHeader(renderer, title, subtitle, theme) {
 function Header(renderer, title, subtitle, theme) {
   const headerBox = new BoxRenderable(renderer, {
     id: "header-box",
+    flexDirection: "column",
     justifyContent: "center",
     alignItems: "flex-start",
-    marginLeft: 4,
-    marginBottom: 1,
+    marginLeft: LAYOUT.HEADER_MARGIN_LEFT,
+    marginBottom: LAYOUT.HEADER_MARGIN_BOTTOM,
     backgroundColor: theme?.backgroundColor ?? "transparent"
   });
   const titleText = Text({
     content: title,
     attributes: TextAttributes2.BOLD,
-    fg: theme?.textColor
+    fg: theme?.primaryColor ?? theme?.textColor
   });
   headerBox.add(titleText);
   if (subtitle) {
     const subtitleText = Text({
       content: subtitle,
-      attributes: TextAttributes2.NONE,
+      attributes: TextAttributes2.DIM,
       fg: theme?.mutedTextColor ?? theme?.textColor
     });
     headerBox.add(subtitleText);
   }
   return headerBox;
 }
-var init_Header = () => {};
+var init_Header = __esm(() => {
+  init_constants();
+});
 
 // src/ui/components/Footer.ts
 import { Text as Text2, BoxRenderable as BoxRenderable2 } from "@opentui/core";
-var init_Footer = () => {};
+var init_Footer = __esm(() => {
+  init_constants();
+});
 
 // src/ui/components/Panel.ts
 import { BoxRenderable as BoxRenderable3 } from "@opentui/core";
@@ -8743,13 +9710,15 @@ function Panel(renderer, props) {
     borderStyle: "single",
     borderColor: props.theme?.borderColor ?? "#475569",
     backgroundColor: props.theme?.panelBackgroundColor ?? "transparent",
-    margin: props.margin || 1,
+    margin: props.margin ?? LAYOUT.PANEL_MARGIN,
     title: props.title,
     titleAlignment: props.titleAlignment || "left"
   });
   return panel;
 }
-var init_Panel = () => {};
+var init_Panel = __esm(() => {
+  init_constants();
+});
 
 // src/ui/components/SelectMenu.ts
 import { SelectRenderable, SelectRenderableEvents } from "@opentui/core";
@@ -8800,7 +9769,8 @@ function menuHeaderSectionOptions() {
     minWidth: MENU_PANEL_MIN_WIDTH,
     alignItems: "flex-start",
     justifyContent: "flex-start",
-    flexShrink: 0
+    flexShrink: 0,
+    marginBottom: 0.5
   };
 }
 function menuPanelOptions(id, theme, overrides = {}) {
@@ -8816,7 +9786,8 @@ function menuPanelOptions(id, theme, overrides = {}) {
     borderStyle: "single",
     borderColor: theme.borderColor ?? "#475569",
     backgroundColor: theme.panelBackgroundColor ?? "transparent",
-    margin: 2,
+    margin: LAYOUT.PANEL_MARGIN,
+    padding: LAYOUT.PANEL_PADDING,
     ...overrides
   };
 }
@@ -8829,8 +9800,14 @@ function applyCompactMenuLayout(options) {
   if (options.panel) {
     options.panel.margin = compact ? 1 : 2;
   }
-  if (options.select && typeof options.select.itemSpacing !== "undefined") {
-    options.select.itemSpacing = compact ? 0 : 1;
+  if (options.select) {
+    const compactSpacing = 0.5;
+    const wideSpacing = 1;
+    if (typeof options.select.itemSpacing !== "undefined") {
+      options.select.itemSpacing = compact ? compactSpacing : wideSpacing;
+    } else {
+      options.select.itemSpacing = compact ? compactSpacing : wideSpacing;
+    }
   }
 }
 function wireCompactMenuLayout(panel, select) {
@@ -8845,16 +9822,16 @@ function wireCompactMenuLayout(panel, select) {
   });
 }
 var MENU_PANEL_MAX_WIDTH = 96, MENU_PANEL_MIN_WIDTH = 40, MENU_PANEL_WIDTH = "85%", MENU_PANEL_MAX_HEIGHT = 20, MENU_PANEL_MIN_HEIGHT = 8, COMPACT_WIDTH_THRESHOLD = 70;
-var init_layout = () => {};
+var init_layout = __esm(() => {
+  init_constants();
+});
 
 // src/ui/view/MainMenuView.ts
 import { BoxRenderable as BoxRenderable5 } from "@opentui/core";
-function MainMenuView(renderer, viewModel, theme, onNavigate) {
-  const detector = new ProjectDetection;
-  const detection = detector.detectAndroidProject(process.cwd());
-  const mode = detection.isAndroidProject ? "anvil" : "forge";
-  const screenTitle = mode === "anvil" ? "The Anvil" : "Forge";
-  const subtitle = mode === "anvil" ? "Project menu" : "Main menu";
+function MainMenuView(renderer, viewModel, theme, onNavigate, workspace) {
+  const mode = workspace.isAndroidProject ? "anvil" : "forge";
+  const screenTitle = "Droidforge";
+  const subtitle = mode === "anvil" ? "In project" : "No project";
   const menuContainer = new BoxRenderable5(renderer, {
     id: "menu-container",
     alignItems: "center",
@@ -8864,6 +9841,8 @@ function MainMenuView(renderer, viewModel, theme, onNavigate) {
   });
   const header = MainHeader(renderer, screenTitle, subtitle, theme);
   menuContainer.add(header);
+  const spacer = new BoxRenderable5(renderer, { id: "menu-header-spacer", height: 1, flexShrink: 0 });
+  menuContainer.add(spacer);
   const selectContainer = new BoxRenderable5(renderer, menuPanelOptions("main-menu-panel", theme));
   const menuOptions = viewModel.getMenuOptions(mode);
   const selectMenu = SelectMenu(renderer, {
@@ -8871,6 +9850,7 @@ function MainMenuView(renderer, viewModel, theme, onNavigate) {
     options: menuOptions,
     autoFocus: true,
     theme,
+    itemSpacing: 1,
     onSelect: (index, option) => {
       const view = viewModel.onMenuItemSelected(index, option);
       onNavigate(view);
@@ -8895,7 +9875,7 @@ function DashboardView(renderer, viewModel, theme) {
     flexGrow: 1,
     backgroundColor: theme.backgroundColor ?? "transparent"
   });
-  const header = Header(renderer, "\uD83C\uDFE0 Dashboard - Quick Actions", undefined, theme);
+  const header = Header(renderer, "Dashboard - Quick Actions", undefined, theme);
   dashboardContainer.add(header);
   const contentBox = new BoxRenderable6(renderer, {
     id: "dashboard-content",
@@ -8904,27 +9884,45 @@ function DashboardView(renderer, viewModel, theme) {
   });
   const leftPanel = Panel(renderer, {
     id: "projects-panel",
-    title: "\uD83D\uDCC1 Recent Projects",
+    title: "Recent Projects",
     flexGrow: 1,
     theme
-  });
-  viewModel.getRecentProjects().forEach((project) => {
-    leftPanel.add(Text3({ content: `\u2022 ${project}`, margin: 1 }));
   });
   const rightPanel = Panel(renderer, {
     id: "stats-panel",
-    title: "\uD83D\uDCCA Quick Stats",
+    title: "Quick Stats",
     flexGrow: 1,
     theme
   });
-  const stats = viewModel.getQuickStats();
-  rightPanel.add(Text3({ content: `Projects: ${stats.projects}`, margin: 1 }));
-  rightPanel.add(Text3({ content: `Active: ${stats.active}`, margin: 1 }));
-  rightPanel.add(Text3({ content: `Completed: ${stats.completed}`, margin: 1 }));
-  rightPanel.add(Text3({ content: `Templates: ${stats.templates}`, margin: 1 }));
+  const loadingText = Text3({ content: "Loading...", margin: 1, fg: theme.mutedTextColor });
+  leftPanel.add(loadingText);
+  const projectsText = Text3({ content: "Projects: ...", margin: 1, fg: theme.textColor });
+  const recentText = Text3({ content: "Recent: ...", margin: 1, fg: theme.textColor });
+  rightPanel.add(projectsText);
+  rightPanel.add(recentText);
   contentBox.add(leftPanel);
   contentBox.add(rightPanel);
   dashboardContainer.add(contentBox);
+  const loadData = async () => {
+    try {
+      const [stats, projects] = await Promise.all([
+        viewModel.getQuickStats(),
+        viewModel.getRecentProjects(5)
+      ]);
+      leftPanel.remove(loadingText.id);
+      projects.forEach((project) => {
+        leftPanel.add(Text3({ content: `  ${project.name}`, margin: 1, fg: theme.textColor }));
+      });
+      rightPanel.remove(projectsText.id);
+      rightPanel.remove(recentText.id);
+      rightPanel.add(Text3({ content: `Projects: ${stats.projects}`, margin: 1, fg: theme.textColor }));
+      rightPanel.add(Text3({ content: `Recent (24h): ${stats.recent}`, margin: 1, fg: theme.textColor }));
+    } catch {
+      leftPanel.remove(loadingText.id);
+      leftPanel.add(Text3({ content: "  Unable to load", margin: 1, fg: theme.mutedTextColor }));
+    }
+  };
+  loadData();
   return dashboardContainer;
 }
 var init_DashboardView = __esm(() => {
@@ -8976,53 +9974,10 @@ var init_ProjectsView = __esm(() => {
   init_layout();
 });
 
-// src/ui/view/ToolsView.ts
-import { Text as Text4, BoxRenderable as BoxRenderable8 } from "@opentui/core";
-function ToolsView(renderer, viewModel, theme) {
-  const toolsContainer = new BoxRenderable8(renderer, {
-    id: "tools-container",
-    flexDirection: "column",
-    flexGrow: 1,
-    backgroundColor: theme.backgroundColor ?? "transparent"
-  });
-  const header = Header(renderer, "\uD83D\uDD27 Tools - Development Utilities", undefined, theme);
-  toolsContainer.add(header);
-  const contentBox = new BoxRenderable8(renderer, {
-    id: "tools-content",
-    flexDirection: "row",
-    flexGrow: 1
-  });
-  const leftPanel = Panel(renderer, {
-    id: "tools-categories",
-    title: "Code Generators",
-    flexGrow: 1,
-    theme
-  });
-  viewModel.getCodeGenerators().forEach((generator) => {
-    leftPanel.add(Text4({ content: `\u2022 ${generator}`, margin: 1 }));
-  });
-  const rightPanel = Panel(renderer, {
-    id: "tools-utilities",
-    title: "Utilities",
-    flexGrow: 1,
-    theme
-  });
-  viewModel.getUtilities().forEach((utility) => {
-    rightPanel.add(Text4({ content: `\u2022 ${utility}`, margin: 1 }));
-  });
-  contentBox.add(leftPanel);
-  contentBox.add(rightPanel);
-  toolsContainer.add(contentBox);
-  return toolsContainer;
-}
-var init_ToolsView = __esm(() => {
-  init_components();
-});
-
 // src/ui/view/ThemePickerView.ts
-import { BoxRenderable as BoxRenderable9 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable8 } from "@opentui/core";
 function ThemePickerView(renderer, viewModel, theme, onBack, onSelectCreated) {
-  const container = new BoxRenderable9(renderer, {
+  const container = new BoxRenderable8(renderer, {
     id: "theme-picker-container",
     alignItems: "center",
     justifyContent: "center",
@@ -9030,12 +9985,12 @@ function ThemePickerView(renderer, viewModel, theme, onBack, onSelectCreated) {
     flexGrow: 1,
     backgroundColor: theme.backgroundColor ?? "transparent"
   });
-  const headerSection = new BoxRenderable9(renderer, menuHeaderSectionOptions());
+  const headerSection = new BoxRenderable8(renderer, menuHeaderSectionOptions());
   const modePref = viewModel.getThemeModePreference();
   const effectiveMode = viewModel.getEffectiveThemeMode();
   headerSection.add(Header(renderer, "Themes", `Mode: ${modePref} (${effectiveMode}) \u2022 Current: ${viewModel.getSelectedThemeId()}`, theme));
   container.add(headerSection);
-  const panel = new BoxRenderable9(renderer, menuPanelOptions("theme-menu-panel", theme));
+  const panel = new BoxRenderable8(renderer, menuPanelOptions("theme-menu-panel", theme));
   const themes = viewModel.listThemes();
   const selectedId = viewModel.getSelectedThemeId();
   const options = themes.map((entry) => ({
@@ -9075,9 +10030,9 @@ var init_SettingsView = __esm(() => {
 });
 
 // src/ui/view/AboutView.ts
-import { Text as Text5, BoxRenderable as BoxRenderable10, ASCIIFont as ASCIIFont2 } from "@opentui/core";
+import { Text as Text4, BoxRenderable as BoxRenderable9, ASCIIFont as ASCIIFont2 } from "@opentui/core";
 function AboutView(renderer, viewModel, theme) {
-  const aboutContainer = new BoxRenderable10(renderer, {
+  const aboutContainer = new BoxRenderable9(renderer, {
     id: "about-container",
     flexDirection: "column",
     flexGrow: 1,
@@ -9085,13 +10040,13 @@ function AboutView(renderer, viewModel, theme) {
   });
   const header = Header(renderer, "Maker\u2019s Mark", undefined, theme);
   aboutContainer.add(header);
-  const contentBox = new BoxRenderable10(renderer, {
+  const contentBox = new BoxRenderable9(renderer, {
     id: "about-content",
     alignItems: "center",
     justifyContent: "center",
     flexGrow: 1
   });
-  const infoBox = new BoxRenderable10(renderer, {
+  const infoBox = new BoxRenderable9(renderer, {
     id: "info-box",
     flexDirection: "column",
     alignItems: "center",
@@ -9099,15 +10054,15 @@ function AboutView(renderer, viewModel, theme) {
   });
   const info = viewModel.getAppInfo();
   infoBox.add(ASCIIFont2({ font: "tiny", text: info.name, color: theme.primaryColor ?? theme.textColor, backgroundColor: theme.backgroundColor ?? "transparent", selectable: false }));
-  infoBox.add(Text5({ content: `Version ${info.version}`, fg: theme.textColor, margin: 1 }));
-  infoBox.add(Text5({ content: info.description, fg: theme.textColor, margin: 1 }));
-  infoBox.add(Text5({ content: "", margin: 1 }));
-  infoBox.add(Text5({ content: info.builtWith, fg: theme.textColor, margin: 1 }));
-  infoBox.add(Text5({ content: info.tagline, fg: theme.textColor, margin: 1 }));
-  infoBox.add(Text5({ content: "", margin: 1 }));
-  infoBox.add(Text5({ content: "Features:", fg: theme.textColor, attributes: 1, margin: 1 }));
+  infoBox.add(Text4({ content: `Version ${info.version}`, fg: theme.textColor, margin: 1 }));
+  infoBox.add(Text4({ content: info.description, fg: theme.textColor, margin: 1 }));
+  infoBox.add(Text4({ content: "", margin: 1 }));
+  infoBox.add(Text4({ content: info.builtWith, fg: theme.textColor, margin: 1 }));
+  infoBox.add(Text4({ content: info.tagline, fg: theme.textColor, margin: 1 }));
+  infoBox.add(Text4({ content: "", margin: 1 }));
+  infoBox.add(Text4({ content: "Features:", fg: theme.textColor, attributes: 1, margin: 1 }));
   viewModel.getFeatures().forEach((feature) => {
-    infoBox.add(Text5({ content: `\u2022 ${feature}`, fg: theme.textColor, margin: 1 }));
+    infoBox.add(Text4({ content: `\u2022 ${feature}`, fg: theme.textColor, margin: 1 }));
   });
   contentBox.add(infoBox);
   aboutContainer.add(contentBox);
@@ -9118,9 +10073,9 @@ var init_AboutView = __esm(() => {
 });
 
 // src/ui/view/ActionsView.ts
-import { BoxRenderable as BoxRenderable11, Text as Text6, TextAttributes as TextAttributes4 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable10, Text as Text5, TextAttributes as TextAttributes4 } from "@opentui/core";
 function ActionsView(renderer, viewModel, theme, onNavigate) {
-  const container = new BoxRenderable11(renderer, {
+  const container = new BoxRenderable10(renderer, {
     id: "actions-container",
     alignItems: "center",
     justifyContent: "center",
@@ -9128,15 +10083,16 @@ function ActionsView(renderer, viewModel, theme, onNavigate) {
     flexGrow: 1,
     backgroundColor: theme.backgroundColor ?? "transparent"
   });
-  const headerSection = new BoxRenderable11(renderer, menuHeaderSectionOptions());
+  const headerSection = new BoxRenderable10(renderer, menuHeaderSectionOptions());
   headerSection.add(Header(renderer, "Actions", "Commands", theme));
   container.add(headerSection);
-  const menuPanel = new BoxRenderable11(renderer, menuPanelOptions("actions-panel", theme));
+  const menuPanel = new BoxRenderable10(renderer, menuPanelOptions("actions-panel", theme));
   const selectMenu = SelectMenu(renderer, {
     id: "actions-select",
     options: viewModel.getMenuOptions(),
     autoFocus: true,
     theme,
+    itemSpacing: 1,
     onSelect: (_index, option) => {
       const value = typeof option.value === "string" ? option.value : "";
       const result = viewModel.handleMenuSelection(value);
@@ -9151,7 +10107,7 @@ function ActionsView(renderer, viewModel, theme, onNavigate) {
     headerSection.remove("actions-message");
     if (!message)
       return;
-    headerSection.add(Text6({
+    headerSection.add(Text5({
       id: "actions-message",
       content: message,
       fg: theme.mutedTextColor ?? theme.textColor,
@@ -9164,7 +10120,7 @@ function ActionsView(renderer, viewModel, theme, onNavigate) {
     updateInlineMessage();
   }
   viewModel.setMenuUpdateCallback(refreshMenu);
-  const menuSection = new BoxRenderable11(renderer, {
+  const menuSection = new BoxRenderable10(renderer, {
     alignItems: "center",
     justifyContent: "center"
   });
@@ -9180,103 +10136,50 @@ var init_ActionsView = __esm(() => {
 });
 
 // src/ui/view/GradleView.ts
-import { BoxRenderable as BoxRenderable12, Text as Text7, TextAttributes as TextAttributes5 } from "@opentui/core";
-function GradleView(renderer, viewModel, theme, onNavigate, titles = { headerTitle: "Gradle Tasks", panelTitle: "Gradle" }) {
-  const container = new BoxRenderable12(renderer, {
-    id: "gradle-container",
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "column",
-    flexGrow: 1,
-    backgroundColor: theme.backgroundColor ?? "transparent"
-  });
-  const headerSection = new BoxRenderable12(renderer, menuHeaderSectionOptions());
-  headerSection.add(Header(renderer, titles.headerTitle, titles.panelTitle, theme));
-  container.add(headerSection);
-  const menuPanel = new BoxRenderable12(renderer, menuPanelOptions("gradle-menu-panel", theme));
-  const selectMenu = SelectMenu(renderer, {
-    id: "gradle-select",
-    options: viewModel.getMenuOptions(),
-    autoFocus: true,
-    theme,
-    onSelect: (_index, option) => {
-      const value = typeof option.value === "string" ? option.value : "";
-      const result = viewModel.handleMenuSelection(value);
-      if (result.action === "navigate" && onNavigate) {
-        onNavigate(`actionoutputview:${result.command}`);
-      }
-    }
-  });
-  wireCompactMenuLayout(menuPanel, selectMenu);
-  function updateInlineMessage() {
-    const message = viewModel.inlineMessage;
-    headerSection.remove("gradle-message");
-    if (!message)
-      return;
-    headerSection.add(Text7({
-      id: "gradle-message",
-      content: message,
-      fg: theme.mutedTextColor ?? theme.textColor,
-      attributes: TextAttributes5.DIM,
-      margin: 1
-    }));
-  }
-  function refreshMenu() {
-    selectMenu.options = viewModel.getMenuOptions();
-    updateInlineMessage();
-  }
-  viewModel.setMenuUpdateCallback(refreshMenu);
-  const menuSection = new BoxRenderable12(renderer, {
-    alignItems: "center",
-    justifyContent: "center"
-  });
-  menuPanel.add(selectMenu);
-  menuSection.add(menuPanel);
-  container.add(menuSection);
-  refreshMenu();
-  return container;
-}
+import { BoxRenderable as BoxRenderable11 } from "@opentui/core";
 var init_GradleView = __esm(() => {
   init_components();
   init_layout();
+  init_constants();
 });
 
 // src/ui/view/ActionOutputView.ts
-import { BoxRenderable as BoxRenderable13, Text as Text8, TextAttributes as TextAttributes6 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable12, Text as Text6, TextAttributes as TextAttributes5 } from "@opentui/core";
 function stripAnsi(text) {
   return text.replace(/\u001b\[[0-9;?]*[@-~]/g, "").replace(/\u001b\][^\u0007]*(\u0007|\u001b\\)/g, "");
 }
 function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setStatusText, onBack) {
-  const container = new BoxRenderable13(renderer, {
+  const container = new BoxRenderable12(renderer, {
     id: "action-output-container",
     flexDirection: "column",
     flexGrow: 1,
     backgroundColor: theme.backgroundColor ?? "transparent"
   });
-  const executionHeader = Text8({
+  const executionHeader = Text6({
     id: "execution-header",
     content: `Executing: ${command}`,
     fg: theme.mutedTextColor ?? theme.textColor,
-    attributes: TextAttributes6.DIM,
+    attributes: TextAttributes5.DIM,
     margin: 1,
     wrapMode: "word"
   });
-  const outputPanel = new BoxRenderable13(renderer, {
+  const outputPanel = new BoxRenderable12(renderer, {
     id: "output-panel",
     flexGrow: 1,
     border: true,
     borderStyle: "single",
     borderColor: theme.borderColor ?? "#475569",
     backgroundColor: theme.panelBackgroundColor ?? "transparent",
-    margin: 1,
+    margin: SPACING.NORMAL,
+    padding: SPACING.NORMAL,
     onSizeChange: function() {
       viewModel.setOutputWindowSize(Math.max(1, this.height - 2));
     }
   });
-  let outputText = Text8({
+  let outputText = Text6({
     id: "output-text",
     content: "",
-    attributes: TextAttributes6.NONE,
+    attributes: TextAttributes5.NONE,
     fg: theme.textColor,
     flexGrow: 1,
     wrapMode: "char"
@@ -9314,11 +10217,11 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setS
     }
     viewModel.setOutputWindowSize(visibleLineCount);
     const visibleLines = output2.lines.slice(output2.scrollOffset, output2.scrollOffset + visibleLineCount);
-    outputText = Text8({
+    outputText = Text6({
       id: "output-text",
       content: ansiToStyledText(visibleLines.join(`
 `), { palette: ansiPalette }),
-      attributes: TextAttributes6.NONE,
+      attributes: TextAttributes5.NONE,
       fg: theme.textColor,
       flexGrow: 1,
       wrapMode: "char"
@@ -9334,7 +10237,7 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setS
     const stateIcon = stateIcons[viewModel.state];
     const exitInfo = output2.exitCode !== null ? ` (exit: ${output2.exitCode})` : "";
     const scrollInfo = `[${output2.scrollOffset + 1}-${Math.min(output2.scrollOffset + visibleLineCount, output2.lines.length)}/${output2.lines.length}]`;
-    setStatusText?.(`${stateIcon} ${viewModel.state}${exitInfo} ${scrollInfo} \u2022 j/k: scroll \u2022 c: copy \u2022 ESC: cancel/back`);
+    setStatusText?.(`${stateIcon} ${viewModel.state}${exitInfo} ${scrollInfo} \u2022 j/k: scroll \u2022 PgUp/PgDn: page \u2022 Home/End: top/bottom \u2022 r: rerun \u2022 c: copy \u2022 ESC: back`);
   }
   viewModel.setOutputUpdateCallback(updateOutput);
   const keyHandler = (key) => {
@@ -9349,6 +10252,31 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setS
       case "up":
         if (viewModel.state !== "idle") {
           viewModel.scrollUp();
+        }
+        break;
+      case "pageup":
+        if (viewModel.state !== "idle") {
+          viewModel.pageUp();
+        }
+        break;
+      case "pagedown":
+        if (viewModel.state !== "idle") {
+          viewModel.pageDown();
+        }
+        break;
+      case "home":
+        if (viewModel.state !== "idle") {
+          viewModel.scrollToTop();
+        }
+        break;
+      case "end":
+        if (viewModel.state !== "idle") {
+          viewModel.scrollToBottom();
+        }
+        break;
+      case "r":
+        if (viewModel.state === "completed" || viewModel.state === "error") {
+          viewModel.rerun();
         }
         break;
       case "c":
@@ -9387,19 +10315,20 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setS
     });
   };
   ensureLive();
-  setStatusText?.(`\u23F3 starting \u2022 j/k: scroll \u2022 c: copy \u2022 ESC: cancel/back`);
+  setStatusText?.(`\u23F3 starting \u2022 j/k: scroll \u2022 PgUp/PgDn: page \u2022 Home/End: top/bottom \u2022 r: rerun \u2022 c: copy \u2022 ESC: cancel`);
   viewModel.setOutputWindowSize(getVisibleLineCount());
   viewModel.runGradleCommand(command);
   return container;
 }
 var init_ActionOutputView = __esm(() => {
   init_utilities();
+  init_constants();
 });
 
 // src/ui/view/ComingSoonView.ts
-import { BoxRenderable as BoxRenderable14, Text as Text9, TextAttributes as TextAttributes7 } from "@opentui/core";
+import { BoxRenderable as BoxRenderable13, Text as Text7, TextAttributes as TextAttributes6 } from "@opentui/core";
 function ComingSoonView(renderer, theme, title, description) {
-  const container = new BoxRenderable14(renderer, {
+  const container = new BoxRenderable13(renderer, {
     id: "coming-soon-container",
     flexDirection: "column",
     alignItems: "center",
@@ -9408,7 +10337,7 @@ function ComingSoonView(renderer, theme, title, description) {
     backgroundColor: theme.backgroundColor ?? "transparent"
   });
   container.add(MainHeader(renderer, title, "Coming soon", theme));
-  const body = new BoxRenderable14(renderer, {
+  const body = new BoxRenderable13(renderer, {
     id: "coming-soon-body",
     width: MENU_PANEL_WIDTH,
     maxWidth: MENU_PANEL_MAX_WIDTH,
@@ -9421,10 +10350,10 @@ function ComingSoonView(renderer, theme, title, description) {
     padding: 1,
     margin: 2
   });
-  body.add(Text9({
+  body.add(Text7({
     id: "coming-soon-description",
     content: description,
-    attributes: TextAttributes7.NONE,
+    attributes: TextAttributes6.NONE,
     fg: theme.textColor,
     wrapMode: "word"
   }));
@@ -9436,12 +10365,284 @@ var init_ComingSoonView = __esm(() => {
   init_layout();
 });
 
+// src/ui/view/DevicesView.ts
+import { BoxRenderable as BoxRenderable14 } from "@opentui/core";
+function DevicesView(renderer, viewModel, theme, onNavigate, onSelectCreated) {
+  const container = new BoxRenderable14(renderer, {
+    id: "devices-container",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "column",
+    flexGrow: 1,
+    backgroundColor: theme.backgroundColor ?? "transparent"
+  });
+  const header = Header(renderer, "Devices", "Connected devices and emulators", theme);
+  container.add(header);
+  const selectContainer = new BoxRenderable14(renderer, menuPanelOptions("devices-panel", theme));
+  const selectMenu = SelectMenu(renderer, {
+    id: "devices-select",
+    options: viewModel.getMenuOptions(),
+    autoFocus: true,
+    theme,
+    itemSpacing: 1,
+    onSelect: async (_index, option) => {
+      const value = typeof option.value === "string" ? option.value : "";
+      const result = await viewModel.handleMenuSelection(value);
+      if (onNavigate && result.action !== "none" && result.action !== "refreshed") {
+        onNavigate(result.action, result.data);
+      }
+    }
+  });
+  wireCompactMenuLayout(selectContainer, selectMenu);
+  function refreshMenu() {
+    selectMenu.options = viewModel.getMenuOptions();
+  }
+  viewModel.setMenuUpdateCallback(refreshMenu);
+  selectContainer.add(selectMenu);
+  container.add(selectContainer);
+  onSelectCreated?.(selectMenu);
+  return container;
+}
+var init_DevicesView = __esm(() => {
+  init_components();
+  init_layout();
+});
+
+// src/ui/view/MirrorView.ts
+import { BoxRenderable as BoxRenderable15 } from "@opentui/core";
+function MirrorView(renderer, viewModel, theme, onNavigate) {
+  const container = new BoxRenderable15(renderer, {
+    id: "mirror-container",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "column",
+    flexGrow: 1,
+    backgroundColor: theme.backgroundColor ?? "transparent"
+  });
+  const header = Header(renderer, "Screen Mirror", "Mirror device display via scrcpy", theme);
+  container.add(header);
+  const selectContainer = new BoxRenderable15(renderer, menuPanelOptions("mirror-panel", theme));
+  const selectMenu = SelectMenu(renderer, {
+    id: "mirror-select",
+    options: viewModel.getMenuOptions(),
+    autoFocus: true,
+    theme,
+    itemSpacing: 1,
+    onSelect: (_index, option) => {
+      const value = typeof option.value === "string" ? option.value : "";
+      viewModel.handleMenuSelection(value);
+    }
+  });
+  wireCompactMenuLayout(selectContainer, selectMenu);
+  function refreshMenu() {
+    selectMenu.options = viewModel.getMenuOptions();
+  }
+  viewModel.setMenuUpdateCallback(refreshMenu);
+  selectContainer.add(selectMenu);
+  container.add(selectContainer);
+  return container;
+}
+var init_MirrorView = __esm(() => {
+  init_components();
+  init_layout();
+});
+
+// src/ui/view/LogcatView.ts
+import { BoxRenderable as BoxRenderable16, Text as Text9, TextAttributes as TextAttributes8 } from "@opentui/core";
+function LogcatView(renderer, viewModel, config, theme, setStatusText, onBack) {
+  const container = new BoxRenderable16(renderer, {
+    id: "logcat-container",
+    flexDirection: "column",
+    flexGrow: 1,
+    backgroundColor: theme.backgroundColor ?? "transparent"
+  });
+  const title = config.packageName ? `App Logs: ${config.packageName}` : "Device Logs";
+  const header = Header(renderer, title, config.deviceId ?? "All devices", theme);
+  container.add(header);
+  const outputPanel = new BoxRenderable16(renderer, {
+    id: "logcat-output-panel",
+    flexGrow: 1,
+    border: true,
+    borderStyle: "single",
+    borderColor: theme.borderColor ?? "#475569",
+    backgroundColor: theme.panelBackgroundColor ?? "transparent",
+    margin: SPACING.COMFORTABLE,
+    padding: SPACING.NORMAL,
+    onSizeChange: function() {
+      viewModel.setOutputWindowSize(Math.max(1, this.height - 2));
+    }
+  });
+  let outputText = Text9({
+    id: "logcat-output-text",
+    content: "",
+    attributes: TextAttributes8.NONE,
+    fg: theme.textColor,
+    flexGrow: 1,
+    wrapMode: "char"
+  });
+  outputPanel.add(outputText);
+  container.add(outputPanel);
+  function getVisibleLineCount() {
+    return Math.max(1, outputPanel.height - 2);
+  }
+  let liveRequested = false;
+  const ensureLive = () => {
+    if (liveRequested)
+      return;
+    if (typeof renderer.requestLive === "function") {
+      renderer.requestLive();
+    }
+    liveRequested = true;
+  };
+  const dropLive = () => {
+    if (!liveRequested)
+      return;
+    if (typeof renderer.dropLive === "function") {
+      renderer.dropLive();
+    }
+    liveRequested = false;
+  };
+  function updateOutput() {
+    const state = viewModel.state;
+    if (state === "running") {
+      ensureLive();
+    } else {
+      dropLive();
+    }
+    viewModel.setOutputWindowSize(getVisibleLineCount());
+    const visibleLines = viewModel.getVisibleLines();
+    const formatted = visibleLines.map((l) => formatLogcatLine(l)).join(`
+`);
+    outputText = Text9({
+      id: "logcat-output-text",
+      content: formatted,
+      attributes: TextAttributes8.NONE,
+      fg: theme.textColor,
+      flexGrow: 1,
+      wrapMode: "char"
+    });
+    outputPanel.remove("logcat-output-text");
+    outputPanel.add(outputText);
+    const stateIcons = {
+      idle: "\u23F8",
+      running: "\u23F3",
+      paused: "\u23F8",
+      error: "\u274C"
+    };
+    const stateIcon = stateIcons[state];
+    const output2 = viewModel.output;
+    const scrollInfo = `[${output2.scrollOffset + 1}-${Math.min(output2.scrollOffset + getVisibleLineCount(), output2.lines.length)}/${output2.lines.length}]`;
+    setStatusText?.(`${stateIcon} ${state} ${scrollInfo} \u2022 j/k: scroll \u2022 p: pause \u2022 c: clear \u2022 ESC: back`);
+  }
+  viewModel.setOutputUpdateCallback(updateOutput);
+  const keyHandler = (key) => {
+    switch (key.name) {
+      case "j":
+      case "down":
+        viewModel.scrollDown();
+        break;
+      case "k":
+      case "up":
+        viewModel.scrollUp();
+        break;
+      case "pageup":
+        viewModel.pageUp();
+        break;
+      case "pagedown":
+        viewModel.pageDown();
+        break;
+      case "home":
+        viewModel.scrollToTop();
+        break;
+      case "end":
+        viewModel.scrollToBottom();
+        break;
+      case "p":
+        if (viewModel.state === "running") {
+          viewModel.pauseStream();
+        } else if (viewModel.state === "paused") {
+          viewModel.resumeStream();
+        }
+        break;
+      case "c":
+        viewModel.clearBuffer();
+        break;
+      case "escape":
+        viewModel.stopStream();
+        dropLive();
+        if (onBack)
+          onBack();
+        break;
+    }
+  };
+  renderer.keyInput.on("keypress", keyHandler);
+  container.__dispose = () => {
+    dropLive();
+    viewModel.stopStream();
+    viewModel.setOutputUpdateCallback(() => {
+      return;
+    });
+  };
+  viewModel.setConfig(config);
+  ensureLive();
+  viewModel.startStream();
+  return container;
+}
+var init_LogcatView = __esm(() => {
+  init_components();
+  init_constants();
+  init_logcatParser();
+});
+
+// src/ui/view/AdbActionsView.ts
+import { BoxRenderable as BoxRenderable17 } from "@opentui/core";
+function AdbActionsView(renderer, viewModel, theme, onNavigate) {
+  const container = new BoxRenderable17(renderer, {
+    id: "adb-actions-container",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "column",
+    flexGrow: 1,
+    backgroundColor: theme.backgroundColor ?? "transparent"
+  });
+  const device = viewModel.getSelectedDevice();
+  const subtitle = device ? `Device: ${device}` : "Quick device commands";
+  const header = Header(renderer, "ADB Actions", subtitle, theme);
+  container.add(header);
+  const selectContainer = new BoxRenderable17(renderer, menuPanelOptions("adb-actions-panel", theme));
+  const selectMenu = SelectMenu(renderer, {
+    id: "adb-actions-select",
+    options: viewModel.getMenuOptions(),
+    autoFocus: true,
+    theme,
+    itemSpacing: 1,
+    onSelect: async (_index, option) => {
+      const value = typeof option.value === "string" ? option.value : "";
+      const result = await viewModel.handleMenuSelection(value);
+      if (result.action === "navigate" && result.command && onNavigate) {
+        onNavigate(`adb-output:${result.command}`);
+      }
+    }
+  });
+  wireCompactMenuLayout(selectContainer, selectMenu);
+  function refreshMenu() {
+    selectMenu.options = viewModel.getMenuOptions();
+  }
+  viewModel.setMenuUpdateCallback(refreshMenu);
+  selectContainer.add(selectMenu);
+  container.add(selectContainer);
+  return container;
+}
+var init_AdbActionsView = __esm(() => {
+  init_components();
+  init_layout();
+});
+
 // src/ui/view/index.ts
 var init_view = __esm(() => {
   init_MainMenuView();
   init_DashboardView();
   init_ProjectsView();
-  init_ToolsView();
   init_SettingsView();
   init_AboutView();
   init_ActionsView();
@@ -9449,14 +10650,188 @@ var init_view = __esm(() => {
   init_ActionOutputView();
   init_ComingSoonView();
   init_ThemePickerView();
+  init_DevicesView();
+  init_MirrorView();
+  init_LogcatView();
+  init_AdbActionsView();
+});
+
+// src/app/ViewRouter.ts
+function getStatusTextForView(view, diContainer2) {
+  if (view.startsWith("actionoutputview:")) {
+    return "j/k: scroll \u2022 c: copy \u2022 ESC: cancel/back";
+  }
+  const label = VIEW_LABELS[view];
+  const sep = " \xB7 ";
+  switch (view) {
+    case "menu":
+      return (label ? label + sep : "") + "\u2191\u2193: navigate \u2022 ENTER: select \u2022 CTRL+C: quit";
+    case "projects": {
+      const vm = diContainer2.get("ProjectsViewModel");
+      const hint = vm.getFooterText?.() ?? "ESC: back";
+      return (label ? label + sep : "") + hint;
+    }
+    case "settings":
+      return (label ? label + sep : "") + "ESC: back \u2022 M: mode \u2022 D/L: set dark/light \u2022 R: reload";
+    case "about":
+      return (label ? label + sep : "") + "ESC: back \u2022 T: themes";
+    case "dashboard":
+      return (label ? label + sep : "") + "ESC: back \u2022 TAB: navigate \u2022 ENTER: select";
+    case "actions":
+      return (label ? label + sep : "") + "\u2191\u2193: navigate \u2022 ENTER: select \u2022 ESC: back";
+    default:
+      return (label ? label + sep : "") + "ESC: back";
+  }
+}
+function renderView(currentView, ctx) {
+  const statusText = getStatusTextForView(currentView, ctx.diContainer);
+  if (currentView.startsWith("actionoutputview:")) {
+    const command = currentView.slice("actionoutputview:".length);
+    const viewModel = ctx.diContainer.get("ActionsViewModel");
+    const view = ActionOutputView(ctx.renderer, viewModel, command, ctx.theme, ctx.ansiPalette, ctx.setStatusText, () => {
+      ctx.onGoBackThenRender();
+    });
+    return { view, statusText };
+  }
+  switch (currentView) {
+    case "menu": {
+      const viewModel = ctx.diContainer.get("MainMenuViewModel");
+      const ws = ctx.diContainer.get("WorkspaceService");
+      const view = MainMenuView(ctx.renderer, viewModel, ctx.theme, ctx.onNavigateThenRender, ws);
+      return { view, statusText };
+    }
+    case "dashboard": {
+      const viewModel = ctx.diContainer.get("DashboardViewModel");
+      const view = DashboardView(ctx.renderer, viewModel, ctx.theme);
+      return { view, statusText };
+    }
+    case "projects": {
+      const viewModel = ctx.diContainer.get("ProjectsViewModel");
+      const view = ProjectsView(ctx.renderer, viewModel, ctx.theme, (action) => {
+        if (action === "noop")
+          return;
+        if (action.startsWith("open-project-")) {
+          const id = action.slice("open-project-".length);
+          (async () => {
+            try {
+              const projectRepo = ctx.diContainer.get("ProjectRepository");
+              const project = await projectRepo.getProjectById(id);
+              if (!project?.path)
+                return;
+              process.chdir(project.path);
+              const workspace = ctx.diContainer.get("WorkspaceService");
+              workspace.updateCwd(process.cwd());
+              await projectRepo.saveProject({
+                ...project,
+                updatedAt: new Date
+              });
+              ctx.onNavigateThenRender("menu");
+            } catch (error) {
+              console.error("Failed to open project:", error);
+            }
+          })();
+          return;
+        }
+        if (action.startsWith("confirm-remove:")) {
+          viewModel.confirmRemove();
+          return;
+        }
+        if (action === "cancel-remove") {
+          viewModel.cancelRemove();
+          return;
+        }
+      }, (select) => {
+        ctx.setSelectElement(select);
+      }, ctx.setStatusText);
+      return { view, statusText };
+    }
+    case "actions": {
+      const viewModel = ctx.diContainer.get("ActionsViewModel");
+      const view = ActionsView(ctx.renderer, viewModel, ctx.theme, (action) => {
+        if (action === "back") {
+          ctx.onNavigateThenRender("menu");
+        } else {
+          ctx.onNavigateThenRender(action);
+        }
+      });
+      return { view, statusText };
+    }
+    case "settings": {
+      const viewModel = ctx.diContainer.get("SettingsViewModel");
+      const view = SettingsView(ctx.renderer, viewModel, ctx.theme, ctx.onGoBackThenRender);
+      return { view, statusText };
+    }
+    case "about": {
+      const viewModel = ctx.diContainer.get("AboutViewModel");
+      const view = AboutView(ctx.renderer, viewModel, ctx.theme);
+      return { view, statusText };
+    }
+    case "devices": {
+      const viewModel = ctx.diContainer.get("DevicesViewModel");
+      const view = DevicesView(ctx.renderer, viewModel, ctx.theme, (action, data) => {
+        ctx.onNavigateThenRender("menu");
+      }, (select) => {
+        ctx.setSelectElement(select);
+      });
+      return { view, statusText };
+    }
+    case "adb": {
+      const viewModel = ctx.diContainer.get("AdbActionsViewModel");
+      const view = AdbActionsView(ctx.renderer, viewModel, ctx.theme, (action) => {
+        if (action.startsWith("adb-output:")) {
+          ctx.onGoBackThenRender();
+        } else {
+          ctx.onNavigateThenRender(action);
+        }
+      });
+      return { view, statusText };
+    }
+    case "app-logs": {
+      const viewModel = ctx.diContainer.get("LogcatViewModel");
+      const ws = ctx.diContainer.get("WorkspaceService");
+      const projectName = ws.getCwd().split("/").pop() ?? "app";
+      const view = LogcatView(ctx.renderer, viewModel, { packageName: projectName }, ctx.theme, ctx.setStatusText, () => ctx.onGoBackThenRender());
+      return { view, statusText: "j/k: scroll \u2022 p: pause \u2022 c: clear \u2022 ESC: back" };
+    }
+    case "device-logs": {
+      const viewModel = ctx.diContainer.get("LogcatViewModel");
+      const view = LogcatView(ctx.renderer, viewModel, {}, ctx.theme, ctx.setStatusText, () => ctx.onGoBackThenRender());
+      return { view, statusText: "j/k: scroll \u2022 p: pause \u2022 c: clear \u2022 ESC: back" };
+    }
+    case "screen-mirror": {
+      const viewModel = ctx.diContainer.get("MirrorViewModel");
+      const view = MirrorView(ctx.renderer, viewModel, ctx.theme);
+      return { view, statusText };
+    }
+    default: {
+      const view = ComingSoonView(ctx.renderer, ctx.theme, "Coming soon", `No UI exists yet for: ${currentView}`);
+      return { view, statusText };
+    }
+  }
+}
+var VIEW_LABELS;
+var init_ViewRouter = __esm(() => {
+  init_view();
+  VIEW_LABELS = {
+    menu: "Main",
+    projects: "Projects",
+    settings: "Themes",
+    about: "About",
+    devices: "Devices",
+    adb: "ADB Actions",
+    "app-logs": "App Logs",
+    "device-logs": "Device Logs",
+    "screen-mirror": "Screen Mirror"
+  };
 });
 
 // src/index.ts
 var exports_src = {};
-import { createCliRenderer, Text as Text10, BoxRenderable as BoxRenderable15, TextAttributes as TextAttributes8 } from "@opentui/core";
-import path8 from "path";
+import { createCliRenderer, Text as Text10, BoxRenderable as BoxRenderable18, TextAttributes as TextAttributes9 } from "@opentui/core";
+import path11 from "path";
 async function rememberCurrentAndroidProject() {
-  const detection = projectDetection.detectAndroidProject(process.cwd());
+  const ws = diContainer.get("WorkspaceService");
+  const detection = ws.getDetection();
   if (!detection.isAndroidProject || !detection.projectRoot)
     return;
   const root = normalizeProjectPath(detection.projectRoot);
@@ -9476,45 +10851,20 @@ async function rememberCurrentAndroidProject() {
   });
 }
 function setStatusLineText(content, theme) {
-  const background = theme?.panelBackgroundColor ?? theme?.footerBackgroundColor ?? theme?.backgroundColor ?? "#111827";
-  const textColor = theme?.textColor ?? theme?.footerTextColor ?? "#E5E7EB";
+  const background = theme?.footerBackgroundColor ?? theme?.panelBackgroundColor ?? theme?.backgroundColor ?? "#111827";
+  const borderColor = theme?.footerBorderColor ?? theme?.borderColor ?? theme?.primaryColor ?? "#475569";
+  const textColor = theme?.footerTextColor ?? theme?.textColor ?? "#E5E7EB";
   statusLine.backgroundColor = background === "transparent" ? "#111827" : background;
+  statusLine.borderColor = borderColor;
   const resolvedFg = textColor === "transparent" ? "#E5E7EB" : textColor === statusLine.backgroundColor ? theme?.accentColor ?? theme?.primaryColor ?? "#FFFFFF" : textColor;
   statusLine.remove("status-line-text");
   statusLine.add(Text10({
     id: "status-line-text",
     content,
     fg: resolvedFg,
-    attributes: TextAttributes8.BOLD,
-    wrapMode: "char"
+    attributes: TextAttributes9.BOLD,
+    wrapMode: "word"
   }));
-}
-function statusTextForView(view) {
-  if (view.startsWith("actionoutputview:")) {
-    return "j/k: scroll \u2022 c: copy \u2022 ESC: cancel/back";
-  }
-  switch (view) {
-    case "menu":
-      return "\u2191\u2193: navigate \u2022 ENTER: select \u2022 CTRL+C: quit";
-    case "projects": {
-      const vm = diContainer.get("ProjectsViewModel");
-      return vm.getFooterText?.() ?? "ESC: back";
-    }
-    case "settings":
-      return "ESC: back \u2022 M: mode \u2022 D/L: set dark/light \u2022 R: reload";
-    case "about":
-      return "ESC: back \u2022 T: themes";
-    case "dashboard":
-      return "ESC: back \u2022 TAB: navigate \u2022 ENTER: select";
-    case "tools":
-      return "ESC: back";
-    case "actions":
-    case "hammer-list":
-    case "blueprints":
-      return "\u2191\u2193: navigate \u2022 ENTER: select \u2022 ESC: back";
-    default:
-      return "ESC: back";
-  }
 }
 function renderCurrentView() {
   clearCurrentView(renderer, currentViewElements, currentSelectElement);
@@ -9522,196 +10872,56 @@ function renderCurrentView() {
   const currentView = navigation.getCurrentView();
   const theme = themeManager.getTheme();
   const ansiPalette = themeManager.getAnsiPaletteMap();
-  setStatusLineText(statusTextForView(currentView), theme);
-  if (currentView.startsWith("actionoutputview:")) {
-    const prefix = "actionoutputview:";
-    const command = currentView.slice(prefix.length);
-    const viewModel = diContainer.get("ActionsViewModel");
-    const view = ActionOutputView(renderer, viewModel, command, theme, ansiPalette, (text) => {
-      setStatusLineText(text, themeManager.getTheme());
-    }, () => {
+  const ctx = {
+    renderer,
+    contentHost,
+    navigation,
+    theme,
+    ansiPalette,
+    themeManager,
+    diContainer,
+    setStatusText: (text) => setStatusLineText(text, themeManager.getTheme()),
+    setSelectElement: (el) => {
+      currentSelectElement = el;
+    },
+    onNavigateThenRender: (view) => {
+      navigation.navigateTo(view);
+      renderCurrentView();
+    },
+    onGoBackThenRender: () => {
       navigation.goBack();
       renderCurrentView();
-    });
-    contentHost.add(view);
-    currentViewElements.push(view);
-    return;
-  }
-  switch (currentView) {
-    case "menu": {
-      const viewModel = diContainer.get("MainMenuViewModel");
-      const view = MainMenuView(renderer, viewModel, theme, (nextView) => {
-        navigation.navigateTo(nextView);
-        renderCurrentView();
-      });
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
     }
-    case "dashboard": {
-      const viewModel = diContainer.get("DashboardViewModel");
-      const view = DashboardView(renderer, viewModel, theme);
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "projects": {
-      const viewModel = diContainer.get("ProjectsViewModel");
-      const view = ProjectsView(renderer, viewModel, theme, (action) => {
-        if (action === "noop")
-          return;
-        if (action.startsWith("open-project-")) {
-          const id = action.slice("open-project-".length);
-          (async () => {
-            try {
-              const projectRepo = diContainer.get("ProjectRepository");
-              const project = await projectRepo.getProjectById(id);
-              if (!project?.path)
-                return;
-              process.chdir(project.path);
-              await projectRepo.saveProject({
-                ...project,
-                updatedAt: new Date
-              });
-              navigation.navigateTo("actions");
-              renderCurrentView();
-            } catch (error) {
-              console.error("Failed to open project:", error);
-            }
-          })();
-          return;
-        }
-        if (action.startsWith("confirm-remove:")) {
-          viewModel.confirmRemove();
-          return;
-        }
-        if (action === "cancel-remove") {
-          viewModel.cancelRemove();
-          return;
-        }
-      }, (select) => {
-        currentSelectElement = select;
-      }, (text) => {
-        setStatusLineText(text, themeManager.getTheme());
-      });
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "tools": {
-      const viewModel = diContainer.get("ToolsViewModel");
-      const view = ToolsView(renderer, viewModel, theme);
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "actions": {
-      const viewModel = diContainer.get("ActionsViewModel");
-      const view = ActionsView(renderer, viewModel, theme, (action) => {
-        if (action === "back") {
-          navigation.navigateTo("menu");
-        } else {
-          navigation.navigateTo(action);
-        }
-        renderCurrentView();
-      });
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "settings": {
-      const viewModel = diContainer.get("SettingsViewModel");
-      const view = SettingsView(renderer, viewModel, theme, () => {
-        navigation.goBack();
-        renderCurrentView();
-      });
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "about": {
-      const viewModel = diContainer.get("AboutViewModel");
-      const view = AboutView(renderer, viewModel, theme);
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "hammer-list": {
-      const viewModel = diContainer.get("HammerListViewModel");
-      const view = GradleView(renderer, viewModel, theme, (action) => {
-        navigation.navigateTo(action);
-        renderCurrentView();
-      }, { headerTitle: "Hammer List", panelTitle: "Pinned Gradle Tasks" });
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "blueprints": {
-      const viewModel = diContainer.get("BlueprintsViewModel");
-      const view = GradleView(renderer, viewModel, theme, (action) => {
-        navigation.navigateTo(action);
-        renderCurrentView();
-      }, { headerTitle: "Blueprints", panelTitle: "All Gradle Tasks" });
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "devices": {
-      const view = ComingSoonView(renderer, theme, "Smithy", "Device and emulator management is coming soon.");
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "adb": {
-      const view = ComingSoonView(renderer, theme, "Command Tongs", "ADB shortcuts are coming soon.");
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "kiln-view": {
-      const view = ComingSoonView(renderer, theme, "Kiln View", "App-focused Logcat is coming soon.");
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "foundry-logs": {
-      const view = ComingSoonView(renderer, theme, "Foundry Logs", "Full device Logcat browsing is coming soon.");
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    case "looking-glass": {
-      const view = ComingSoonView(renderer, theme, "Looking Glass", "Device mirroring is coming soon.");
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-    default: {
-      const view = ComingSoonView(renderer, theme, "Coming soon", `No UI exists yet for: ${currentView}`);
-      contentHost.add(view);
-      currentViewElements.push(view);
-      break;
-    }
-  }
+  };
+  const result = renderView(currentView, ctx);
+  setStatusLineText(result.statusText, theme);
+  contentHost.add(result.view);
+  currentViewElements.push(result.view);
 }
-var targetDir, projectDetection, detectedRoot, themeManager, renderer, navigation, currentViewElements, currentSelectElement = null, appShell, contentHost, statusLine;
+var targetDir, projectDetection, detectedRoot, workspace, themeManager, renderer, navigation, currentViewElements, currentSelectElement = null, appShell, contentHost, statusLine;
 var init_src = __esm(async () => {
   init_bootstrap();
   init_di();
+  init_workspace();
   init_utilities();
-  init_view();
+  init_ViewRouter();
   targetDir = process.argv[2];
   if (targetDir) {
-    const resolvedPath = path8.resolve(targetDir);
-    process.chdir(resolvedPath);
+    const resolvedPath = path11.resolve(targetDir);
+    try {
+      process.chdir(resolvedPath);
+    } catch {}
   }
   projectDetection = new ProjectDetection;
   detectedRoot = projectDetection.findAndroidProjectRoot(process.cwd());
   if (detectedRoot) {
-    process.chdir(detectedRoot);
+    try {
+      process.chdir(detectedRoot);
+    } catch {}
   }
+  workspace = new WorkspaceService(process.cwd());
   await bootstrap();
-  await setupDIModules();
+  await setupDIModules(workspace);
   themeManager = diContainer.get("ThemeManager");
   await themeManager.reloadThemes();
   themeManager.onThemeChange?.(() => {
@@ -9721,7 +10931,7 @@ var init_src = __esm(async () => {
   renderer = await createCliRenderer({ exitOnCtrlC: true });
   navigation = new NavigationManager;
   currentViewElements = [];
-  appShell = new BoxRenderable15(renderer, {
+  appShell = new BoxRenderable18(renderer, {
     id: "app-shell",
     flexDirection: "column",
     flexGrow: 1,
@@ -9730,22 +10940,28 @@ var init_src = __esm(async () => {
     alignItems: "stretch",
     justifyContent: "flex-start"
   });
-  contentHost = new BoxRenderable15(renderer, {
+  contentHost = new BoxRenderable18(renderer, {
     id: "content-host",
     flexDirection: "column",
     flexGrow: 1,
     width: "100%",
     alignItems: "stretch",
-    justifyContent: "flex-start"
+    justifyContent: "flex-start",
+    paddingTop: 1,
+    paddingBottom: 1
   });
-  statusLine = new BoxRenderable15(renderer, {
+  statusLine = new BoxRenderable18(renderer, {
     id: "status-line",
-    height: 1,
+    height: 2,
+    minHeight: 2,
     width: "100%",
     alignSelf: "stretch",
-    justifyContent: "flex-start",
+    justifyContent: "center",
     alignItems: "flex-start",
-    paddingLeft: 1
+    paddingLeft: 2,
+    paddingRight: 2,
+    border: true,
+    borderStyle: "single"
   });
   appShell.add(contentHost);
   appShell.add(statusLine);
@@ -9781,6 +10997,12 @@ var init_src = __esm(async () => {
         settingsViewModel.selectThemeForMode(themeManager.getThemeId(), "light").then(renderCurrentView);
         return;
       }
+    }
+    if (keyName === "q" && currentView !== "menu") {
+      navigation.clear();
+      navigation.navigateTo("menu");
+      renderCurrentView();
+      return;
     }
     if (key.name === "escape") {
       if (currentView === "projects") {

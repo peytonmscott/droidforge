@@ -7,7 +7,7 @@ import { ThemePickerView } from './ThemePickerView';
 
 // Settings currently acts as the theme picker.
 export function SettingsView(
-    renderer: any,
+    renderer: import('../../utilities/rendererTypes').CliRendererLike,
     viewModel: SettingsViewModel,
     theme: UiTheme,
     onBack?: () => void,

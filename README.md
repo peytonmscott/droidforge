@@ -1,6 +1,6 @@
 # Droidforge
 
-Droidforge is a terminal UI (TUI) companion for Android development. Point it at an Android/Gradle project and it becomes a fast dashboard for common Gradle tasks, project switching, and more.
+Droidforge is a terminal UI (TUI) companion for Android development. Point it at an Android/Gradle project and it becomes a fast dashboard for common Gradle tasks, project switching, and more. It is designed as a **Neovim companion** and is being prepared to work alongside the official Kotlin LSP when it ships—Neovim handles editing and code intelligence; Droidforge handles build, run, devices, and logs.
 
 ## Modes
 
