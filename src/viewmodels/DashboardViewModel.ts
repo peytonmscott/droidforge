@@ -1,19 +1,22 @@
+import type { ProjectRepository } from '../data/repositories/ProjectRepository';
+
 export class DashboardViewModel {
-    getQuickStats() {
+    constructor(private projectRepo: ProjectRepository) {}
+
+    async getQuickStats() {
+        const projects = await this.projectRepo.getAllProjects();
         return {
-            projects: 12,
-            active: 3,
-            completed: 9,
-            templates: 25
+            projects: projects.length,
+            recent: projects.filter(p => {
+                const dayAgo = new Date();
+                dayAgo.setDate(dayAgo.getDate() - 1);
+                return p.updatedAt && new Date(p.updatedAt) > dayAgo;
+            }).length,
         };
     }
 
-    getRecentProjects() {
-        return [
-            "My Awesome App",
-            "Web Scraper Tool", 
-            "API Client",
-            "Data Visualizer"
-        ];
+    async getRecentProjects(limit = 5) {
+        const projects = await this.projectRepo.getAllProjects();
+        return projects.slice(0, limit);
     }
 }

@@ -49,7 +49,6 @@ export async function setupDIModules(workspace: import('../workspace').Workspace
         MainMenuViewModel,
         DashboardViewModel,
         ProjectsViewModel,
-        ToolsViewModel,
         SettingsViewModel,
         AboutViewModel,
         ActionsViewModel,
@@ -74,12 +73,11 @@ export async function setupDIModules(workspace: import('../workspace').Workspace
 
     // ViewModels
     diContainer.factory('MainMenuViewModel', () => new MainMenuViewModel());
-    diContainer.factory('DashboardViewModel', () => new DashboardViewModel());
+    diContainer.factory('DashboardViewModel', () => new DashboardViewModel(diContainer.get('ProjectRepository')));
 
     // ProjectsViewModel needs to hold state (selection/confirm flows)
     diContainer.single('ProjectsViewModel', () => new ProjectsViewModel(diContainer.get('ProjectRepository')));
 
-    diContainer.factory('ToolsViewModel', () => new ToolsViewModel());
     diContainer.factory('SettingsViewModel', () => new SettingsViewModel(diContainer.get('ThemeManager')));
     diContainer.factory('AboutViewModel', () => new AboutViewModel());
     diContainer.factory('ActionsViewModel', () => new ActionsViewModel(workspace));

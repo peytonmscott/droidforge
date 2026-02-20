@@ -1,20 +1,32 @@
 export class AboutViewModel {
+    private version: string;
+
+    constructor() {
+        try {
+            const pkg = require('../../package.json');
+            this.version = pkg.version || 'dev';
+        } catch {
+            this.version = 'dev';
+        }
+    }
+
     getAppInfo() {
         return {
-            name: "Droid Forge",
-            version: "1.0.0",
-            description: "A powerful development toolkit for building amazing applications with ease.",
-            builtWith: "Built with OpenTUI - Terminal UI Framework",
-            tagline: "Created for developers, by developers"
+            name: "Droidforge",
+            version: this.version,
+            description: "A terminal UI companion for Android development",
+            builtWith: "Built with OpenTUI",
+            tagline: "Neovim companion for Android development"
         };
     }
 
     getFeatures() {
         return [
-            "Interactive project management",
-            "Code generation tools",
-            "Built-in utilities", 
-            "Extensible plugin system"
+            "Project management and switching",
+            "Gradle task runner with live output",
+            "Device and emulator management",
+            "Logcat streaming",
+            "30+ color themes"
         ];
     }
 }
