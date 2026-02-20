@@ -1,4 +1,5 @@
 import { BoxRenderable } from "@opentui/core";
+import type { CliRendererLike } from '../../utilities/rendererTypes';
 import { GradleViewModel } from '../../viewmodels';
 import { MainHeader, SelectMenu } from '../components';
 import type { UiTheme } from '../theme';
@@ -10,7 +11,7 @@ export interface GradleViewTitles {
 }
 
 export function GradleView(
-    renderer: any,
+    renderer: CliRendererLike,
     viewModel: GradleViewModel,
     theme: UiTheme,
     onNavigate?: (action: string) => void,

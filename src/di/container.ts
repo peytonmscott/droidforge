@@ -40,8 +40,8 @@ class DIContainer {
 // Global container instance
 export const diContainer = new DIContainer();
 
-// Module definitions (like Koin modules)
-export async function setupDIModules() {
+// Module definitions (like Koin modules). Pass WorkspaceService when created at startup (after chdir).
+export async function setupDIModules(workspace: import('../workspace').WorkspaceService) {
     // Dynamic imports avoid circular deps and support Bun ESM modules.
     const { Database, ProjectRepository } = await import('../data/repositories');
     const { ThemeManager } = await import('../ui/theme');
@@ -62,8 +62,15 @@ export async function setupDIModules() {
     // Repositories singletons
     diContainer.single('ProjectRepository', () => new ProjectRepository(diContainer.get('Database')));
 
-    // Theme singleton
-    diContainer.single('ThemeManager', () => new ThemeManager());
+    // Theme singleton (uses workspace for project/cwd theme dirs)
+    diContainer.single('ThemeManager', () => new ThemeManager(diContainer.get('WorkspaceService')));
+
+    // Workspace singleton (created once at startup after chdir)
+    diContainer.single('WorkspaceService', () => workspace);
+
+    // Tooling: placeholder for future LSP integration (e.g. Kotlin LSP)
+    const { NoOpToolingService } = await import('../tooling');
+    diContainer.single('ToolingService', () => new NoOpToolingService());
 
     // ViewModels
     diContainer.factory('MainMenuViewModel', () => new MainMenuViewModel());
@@ -75,10 +82,10 @@ export async function setupDIModules() {
     diContainer.factory('ToolsViewModel', () => new ToolsViewModel());
     diContainer.factory('SettingsViewModel', () => new SettingsViewModel(diContainer.get('ThemeManager')));
     diContainer.factory('AboutViewModel', () => new AboutViewModel());
-    diContainer.factory('ActionsViewModel', () => new ActionsViewModel());
-    diContainer.factory('GradleViewModel', () => new GradleViewModel());
+    diContainer.factory('ActionsViewModel', () => new ActionsViewModel(workspace));
+    diContainer.factory('GradleViewModel', () => new GradleViewModel(workspace));
 
     // Project-scoped Gradle menus (no toggle)
-    diContainer.factory('HammerListViewModel', () => new GradleViewModel({ mode: 'curated', showToggle: false }));
-    diContainer.factory('BlueprintsViewModel', () => new GradleViewModel({ mode: 'all', showToggle: false }));
+    diContainer.factory('HammerListViewModel', () => new GradleViewModel(workspace, { mode: 'curated', showToggle: false }));
+    diContainer.factory('BlueprintsViewModel', () => new GradleViewModel(workspace, { mode: 'all', showToggle: false }));
 }

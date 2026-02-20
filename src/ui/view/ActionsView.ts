@@ -1,11 +1,12 @@
 import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
+import type { CliRendererLike } from '../../utilities/rendererTypes';
 import { ActionsViewModel } from '../../viewmodels';
 import { Header, SelectMenu } from '../components';
 import type { UiTheme } from '../theme';
 import { menuHeaderSectionOptions, menuPanelOptions, wireCompactMenuLayout } from '../layout';
 
 export function ActionsView(
-    renderer: any,
+    renderer: CliRendererLike,
     viewModel: ActionsViewModel,
     theme: UiTheme,
     onNavigate?: (action: string) => void

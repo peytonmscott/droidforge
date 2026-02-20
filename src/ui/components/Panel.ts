@@ -1,4 +1,5 @@
 import { BoxRenderable } from "@opentui/core";
+import type { CliRendererLike } from "../../utilities/rendererTypes";
 import type { UiTheme } from "../theme";
 
 export interface PanelProps {
@@ -13,7 +14,7 @@ export interface PanelProps {
     theme?: UiTheme;
 }
 
-export function Panel(renderer: any, props: PanelProps): BoxRenderable {
+export function Panel(renderer: CliRendererLike, props: PanelProps): BoxRenderable {
     const panel = new BoxRenderable(renderer, {
         id: props.id,
         width: props.width,

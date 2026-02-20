@@ -1,8 +1,9 @@
 import { ASCIIFont, BoxRenderable, Text, TextAttributes } from "@opentui/core";
+import type { CliRendererLike } from "../../utilities/rendererTypes";
 import type { UiTheme } from "../theme";
 
 export function MainHeader(
-    renderer: any,
+    renderer: CliRendererLike,
     title: string,
     subtitle?: string,
     theme?: UiTheme,
@@ -37,7 +38,7 @@ export function MainHeader(
 }
 
 export function Header(
-    renderer: any,
+    renderer: CliRendererLike,
     title: string,
     subtitle?: string,
     theme?: UiTheme,

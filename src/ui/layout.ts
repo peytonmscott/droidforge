@@ -11,7 +11,7 @@ export const MENU_PANEL_MIN_HEIGHT = 8;
 
 export const COMPACT_WIDTH_THRESHOLD = 70;
 
-export function createMenuContainer(renderer: any, id: string, theme: UiTheme): BoxRenderable {
+export function createMenuContainer(renderer: import('../../utilities/rendererTypes').CliRendererLike, id: string, theme: UiTheme): BoxRenderable {
     return new BoxRenderable(renderer, {
         id,
         flexDirection: "column",

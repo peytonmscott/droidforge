@@ -1,9 +1,10 @@
 import { Text, BoxRenderable, ASCIIFont, TextAttributes } from "@opentui/core";
+import type { CliRendererLike } from '../../utilities/rendererTypes';
 import { AboutViewModel } from '../../viewmodels';
 import { Header } from '../components';
 import type { UiTheme } from '../theme';
 
-export function AboutView(renderer: any, viewModel: AboutViewModel, theme: UiTheme): BoxRenderable {
+export function AboutView(renderer: CliRendererLike, viewModel: AboutViewModel, theme: UiTheme): BoxRenderable {
     const aboutContainer = new BoxRenderable(renderer, {
         id: "about-container",
         flexDirection: "column",

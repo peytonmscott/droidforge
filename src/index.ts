@@ -3,20 +3,21 @@ import path from 'path';
 
 import { bootstrap } from './bootstrap';
 import { setupDIModules, diContainer } from './di';
-import { NavigationManager, clearCurrentView, getAndroidProjectName, normalizeProjectPath, projectIdFromPath } from './utilities';
-import { ProjectDetection } from './utilities/projectDetection';
+import { WorkspaceService } from './workspace';
 import {
-    MainMenuView,
-    DashboardView,
-    ProjectsView,
-    ToolsView,
-    SettingsView,
-    AboutView,
-    ActionsView,
-    ActionOutputView,
-    ComingSoonView,
-    GradleView,
-} from './ui/view';
+    NavigationManager,
+    clearCurrentView,
+    getAndroidProjectName,
+    normalizeProjectPath,
+    projectIdFromPath,
+    type CliRendererLike,
+    type DisposableRenderable,
+    type SelectLike,
+} from './utilities';
+import { ProjectDetection } from './utilities/projectDetection';
+import type { UiTheme } from './ui/theme';
+import type { ProjectsViewModel, SettingsViewModel } from './viewmodels';
+import { renderView } from './app/ViewRouter';
 
 const targetDir = process.argv[2];
 if (targetDir) {
@@ -39,12 +40,14 @@ if (detectedRoot) {
     }
 }
 
+const workspace = new WorkspaceService(process.cwd());
+
 await bootstrap();
 
-// Initialize DI
-await setupDIModules();
+// Initialize DI (workspace is the single source of truth for project root)
+await setupDIModules(workspace);
 
-const themeManager = diContainer.get('ThemeManager') as any;
+const themeManager = diContainer.get<import('./ui/theme').ThemeManager>('ThemeManager');
 await themeManager.reloadThemes();
 
 themeManager.onThemeChange?.(() => {
@@ -52,11 +55,12 @@ themeManager.onThemeChange?.(() => {
 });
 
 async function rememberCurrentAndroidProject(): Promise<void> {
-    const detection = projectDetection.detectAndroidProject(process.cwd());
+    const ws = diContainer.get<WorkspaceService>('WorkspaceService');
+    const detection = ws.getDetection();
     if (!detection.isAndroidProject || !detection.projectRoot) return;
 
     const root = normalizeProjectPath(detection.projectRoot);
-    const projectRepo = diContainer.get('ProjectRepository') as any;
+    const projectRepo = diContainer.get<import('./data/repositories').ProjectRepository>('ProjectRepository');
 
     const projectId = projectIdFromPath(root);
     const now = new Date();
@@ -78,10 +82,10 @@ async function rememberCurrentAndroidProject(): Promise<void> {
 await rememberCurrentAndroidProject();
 
 // Get dependencies
-const renderer = await createCliRenderer({ exitOnCtrlC: true });
+const renderer = (await createCliRenderer({ exitOnCtrlC: true })) as CliRendererLike;
 const navigation = new NavigationManager();
-let currentViewElements: any[] = [];
-let currentSelectElement: any = null;
+let currentViewElements: DisposableRenderable[] = [];
+let currentSelectElement: SelectLike | null = null;
 
 // App shell: content area + persistent statusline.
 const appShell = new BoxRenderable(renderer, {
@@ -113,7 +117,7 @@ const statusLine = new BoxRenderable(renderer, {
     paddingLeft: 1,
 });
 
-function setStatusLineText(content: string, theme: any): void {
+function setStatusLineText(content: string, theme: UiTheme): void {
     const background =
         theme?.panelBackgroundColor ??
         theme?.footerBackgroundColor ??
@@ -144,38 +148,7 @@ appShell.add(contentHost);
 appShell.add(statusLine);
 renderer.root.add(appShell);
 
-function statusTextForView(view: string): string {
-    if (view.startsWith('actionoutputview:')) {
-        return 'j/k: scroll • c: copy • ESC: cancel/back';
-    }
-
-    switch (view) {
-        case 'menu':
-            return '↑↓: navigate • ENTER: select • CTRL+C: quit';
-        case 'projects': {
-            const vm = diContainer.get('ProjectsViewModel') as any;
-            return vm.getFooterText?.() ?? 'ESC: back';
-        }
-        case 'settings':
-            return 'ESC: back • M: mode • D/L: set dark/light • R: reload';
-        case 'about':
-            return 'ESC: back • T: themes';
-        case 'dashboard':
-            return 'ESC: back • TAB: navigate • ENTER: select';
-        case 'tools':
-            return 'ESC: back';
-        case 'actions':
-        case 'hammer-list':
-        case 'blueprints':
-            return '↑↓: navigate • ENTER: select • ESC: back';
-        default:
-            return 'ESC: back';
-    }
-}
-
-// View rendering function
-function renderCurrentView() {
-
+function renderCurrentView(): void {
     clearCurrentView(renderer, currentViewElements, currentSelectElement);
     currentSelectElement = null;
 
@@ -183,196 +156,32 @@ function renderCurrentView() {
     const theme = themeManager.getTheme();
     const ansiPalette = themeManager.getAnsiPaletteMap();
 
-    setStatusLineText(statusTextForView(currentView), theme);
-
-    if (currentView.startsWith("actionoutputview:")) {
-        const prefix = 'actionoutputview:';
-        const command = currentView.slice(prefix.length);
-
-        const viewModel = diContainer.get('ActionsViewModel') as any;
-        const view = ActionOutputView(renderer, viewModel, command, theme, ansiPalette, (text: string) => {
-            setStatusLineText(text, themeManager.getTheme());
-        }, () => {
+    const ctx: import('./app/ViewRouter').ViewRouterContext = {
+        renderer,
+        contentHost,
+        navigation,
+        theme,
+        ansiPalette,
+        themeManager,
+        diContainer,
+        setStatusText: (text: string) => setStatusLineText(text, themeManager.getTheme()),
+        setSelectElement: (el) => {
+            currentSelectElement = el;
+        },
+        onNavigateThenRender: (view: string) => {
+            navigation.navigateTo(view);
+            renderCurrentView();
+        },
+        onGoBackThenRender: () => {
             navigation.goBack();
             renderCurrentView();
-        });
-        contentHost.add(view);
-        currentViewElements.push(view);
-        return;
-    }
-    switch (currentView) {
-        case "menu": {
-            const viewModel = diContainer.get('MainMenuViewModel') as any;
-            const view = MainMenuView(renderer, viewModel, theme, (nextView: string) => {
-                navigation.navigateTo(nextView);
-                renderCurrentView();
-            });
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "dashboard": {
-            const viewModel = diContainer.get('DashboardViewModel') as any;
-            const view = DashboardView(renderer, viewModel, theme);
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "projects": {
-            const viewModel = diContainer.get('ProjectsViewModel') as any;
-            const view = ProjectsView(renderer, viewModel, theme, (action: string) => {
-                if (action === 'noop') return;
+        },
+    };
 
-                if (action.startsWith('open-project-')) {
-                    const id = action.slice('open-project-'.length);
-                    void (async () => {
-                        try {
-                            const projectRepo = diContainer.get('ProjectRepository') as any;
-                            const project = await projectRepo.getProjectById(id);
-                            if (!project?.path) return;
-
-                            process.chdir(project.path);
-
-                            // Touch updated time
-                            await projectRepo.saveProject({
-                                ...project,
-                                updatedAt: new Date(),
-                            });
-
-                            navigation.navigateTo('menu');
-                            renderCurrentView();
-                        } catch (error) {
-                            console.error('Failed to open project:', error);
-                        }
-                    })();
-                    return;
-                }
-
-                if (action.startsWith('confirm-remove:')) {
-                    void viewModel.confirmRemove();
-                    return;
-                }
-
-                if (action === 'cancel-remove') {
-                    viewModel.cancelRemove();
-                    return;
-                }
-            }, (select) => {
-                currentSelectElement = select;
-            }, (text: string) => {
-                setStatusLineText(text, themeManager.getTheme());
-            });
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "tools": {
-            const viewModel = diContainer.get('ToolsViewModel') as any;
-            const view = ToolsView(renderer, viewModel, theme);
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "actions": {
-            const viewModel = diContainer.get('ActionsViewModel') as any;
-            const view = ActionsView(renderer, viewModel, theme, (action: string) => {
-                if (action === 'back') {
-                    navigation.navigateTo('menu');
-                } else {
-                    navigation.navigateTo(action);
-                }
-                renderCurrentView();
-            });
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "settings": {
-            const viewModel = diContainer.get('SettingsViewModel') as any;
-            const view = SettingsView(renderer, viewModel, theme, () => {
-                navigation.goBack();
-                renderCurrentView();
-            });
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "about": {
-            const viewModel = diContainer.get('AboutViewModel') as any;
-            const view = AboutView(renderer, viewModel, theme);
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "hammer-list": {
-            const viewModel = diContainer.get('HammerListViewModel') as any;
-            const view = GradleView(
-                renderer,
-                viewModel,
-                theme,
-                (action: string) => {
-                    navigation.navigateTo(action);
-                    renderCurrentView();
-                },
-                { headerTitle: 'Hammer List', panelTitle: 'Pinned Gradle Tasks' },
-            );
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "blueprints": {
-            const viewModel = diContainer.get('BlueprintsViewModel') as any;
-            const view = GradleView(
-                renderer,
-                viewModel,
-                theme,
-                (action: string) => {
-                    navigation.navigateTo(action);
-                    renderCurrentView();
-                },
-                { headerTitle: 'Blueprints', panelTitle: 'All Gradle Tasks' },
-            );
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "devices": {
-            const view = ComingSoonView(renderer, theme, 'Smithy', 'Device and emulator management is coming soon.');
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "adb": {
-            const view = ComingSoonView(renderer, theme, 'Command Tongs', 'ADB shortcuts are coming soon.');
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "kiln-view": {
-            const view = ComingSoonView(renderer, theme, 'Kiln View', 'App-focused Logcat is coming soon.');
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "foundry-logs": {
-            const view = ComingSoonView(renderer, theme, 'Foundry Logs', 'Full device Logcat browsing is coming soon.');
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        case "looking-glass": {
-            const view = ComingSoonView(renderer, theme, 'Looking Glass', 'Device mirroring is coming soon.');
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-        default: {
-            const view = ComingSoonView(renderer, theme, 'Coming soon', `No UI exists yet for: ${currentView}`);
-            contentHost.add(view);
-            currentViewElements.push(view);
-            break;
-        }
-    }
+    const result = renderView(currentView, ctx);
+    setStatusLineText(result.statusText, theme);
+    contentHost.add(result.view);
+    currentViewElements.push(result.view);
 }
 
 // Handle keyboard navigation
@@ -392,7 +201,7 @@ renderer.keyInput.on("keypress", (key: KeyEvent) => {
     }
 
     if (currentView === 'settings') {
-        const settingsViewModel = diContainer.get('SettingsViewModel') as any;
+        const settingsViewModel = diContainer.get<SettingsViewModel>('SettingsViewModel');
 
         if (keyName === 'r') {
             void settingsViewModel.reloadThemes().then(renderCurrentView);
@@ -419,7 +228,7 @@ renderer.keyInput.on("keypress", (key: KeyEvent) => {
 
     if (key.name === 'escape') {
         if (currentView === 'projects') {
-            const projectsViewModel = diContainer.get('ProjectsViewModel') as any;
+            const projectsViewModel = diContainer.get<ProjectsViewModel>('ProjectsViewModel');
             if (projectsViewModel.isConfirmingRemoval()) {
                 projectsViewModel.cancelRemove();
                 return;
@@ -434,7 +243,7 @@ renderer.keyInput.on("keypress", (key: KeyEvent) => {
     }
 
     if (currentView === 'projects') {
-        const projectsViewModel = diContainer.get('ProjectsViewModel') as any;
+        const projectsViewModel = diContainer.get<ProjectsViewModel>('ProjectsViewModel');
 
         if (projectsViewModel.isConfirmingRemoval()) {
             if (keyName === 'y') {

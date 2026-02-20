@@ -1,4 +1,5 @@
 import { BoxRenderable, Text, TextAttributes } from "@opentui/core";
+import type { CliRendererLike } from '../../utilities/rendererTypes';
 import { ActionsViewModel } from '../../viewmodels';
 import { ansiToStyledText, type AnsiPalette } from "../../utilities";
 import type { UiTheme } from "../theme";
@@ -12,7 +13,7 @@ function stripAnsi(text: string): string {
 }
 
 export function ActionOutputView(
-    renderer: any,
+    renderer: CliRendererLike,
     viewModel: ActionsViewModel,
     command: string,
     theme: UiTheme,

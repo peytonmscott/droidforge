@@ -1,15 +1,16 @@
 import { BoxRenderable } from "@opentui/core";
+import type { CliRendererLike, SelectLike } from '../../utilities/rendererTypes';
 import { ProjectsViewModel } from '../../viewmodels';
 import { Header, SelectMenu } from '../components';
 import type { UiTheme } from '../theme';
 import { menuPanelOptions, wireCompactMenuLayout } from '../layout';
 
 export function ProjectsView(
-    renderer: any,
+    renderer: CliRendererLike,
     viewModel: ProjectsViewModel,
     theme: UiTheme,
     onNavigate?: (action: string) => void,
-    onSelectCreated?: (select: any) => void,
+    onSelectCreated?: (select: SelectLike) => void,
     onStatusText?: (text: string) => void,
 ): BoxRenderable {
     // Create projects container

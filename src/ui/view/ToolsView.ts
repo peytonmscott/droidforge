@@ -3,7 +3,7 @@ import { ToolsViewModel } from '../../viewmodels';
 import { Header, Panel } from '../components';
 import type { UiTheme } from '../theme';
 
-export function ToolsView(renderer: any, viewModel: ToolsViewModel, theme: UiTheme): BoxRenderable {
+export function ToolsView(renderer: import('../../utilities/rendererTypes').CliRendererLike, viewModel: ToolsViewModel, theme: UiTheme): BoxRenderable {
     const toolsContainer = new BoxRenderable(renderer, {
         id: "tools-container",
         flexDirection: "column",

@@ -1,9 +1,10 @@
 import { Text, BoxRenderable } from "@opentui/core";
+import type { CliRendererLike } from '../../utilities/rendererTypes';
 import { DashboardViewModel } from '../../viewmodels';
 import { Header, Panel } from '../components';
 import type { UiTheme } from '../theme';
 
-export function DashboardView(renderer: any, viewModel: DashboardViewModel, theme: UiTheme): BoxRenderable {
+export function DashboardView(renderer: CliRendererLike, viewModel: DashboardViewModel, theme: UiTheme): BoxRenderable {
     const dashboardContainer = new BoxRenderable(renderer, {
         id: "dashboard-container",
         flexDirection: "column",

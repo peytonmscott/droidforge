@@ -1,7 +1,8 @@
 import { Text, BoxRenderable } from "@opentui/core";
+import type { CliRendererLike } from "../../utilities/rendererTypes";
 import type { UiTheme } from "../theme";
 
-export function Footer(renderer: any, content: string, theme?: UiTheme): BoxRenderable {
+export function Footer(renderer: CliRendererLike, content: string, theme?: UiTheme): BoxRenderable {
     const footerBox = new BoxRenderable(renderer, {
         id: "footer-box",
         height: 2,

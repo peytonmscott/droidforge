@@ -1,20 +1,19 @@
 import { BoxRenderable } from "@opentui/core";
+import type { CliRendererLike } from '../../utilities/rendererTypes';
+import type { WorkspaceService } from '../../workspace';
 import { MainMenuViewModel, type RootMenuMode } from '../../viewmodels';
 import { MainHeader, SelectMenu } from '../components';
 import type { UiTheme } from '../theme';
 import { menuPanelOptions, wireCompactMenuLayout } from '../layout';
-import { ProjectDetection } from "../../utilities/projectDetection";
 
 export function MainMenuView(
-    renderer: any,
+    renderer: CliRendererLike,
     viewModel: MainMenuViewModel,
     theme: UiTheme,
-    onNavigate: (view: string) => void
+    onNavigate: (view: string) => void,
+    workspace: WorkspaceService
 ): BoxRenderable {
-    const detector = new ProjectDetection();
-    const detection = detector.detectAndroidProject(process.cwd());
-
-    const mode: RootMenuMode = detection.isAndroidProject ? 'anvil' : 'forge';
+    const mode: RootMenuMode = workspace.isAndroidProject ? 'anvil' : 'forge';
     const screenTitle = mode === 'anvil' ? 'The Anvil' : 'Forge';
     const subtitle = mode === 'anvil' ? 'Project menu' : 'Main menu';
 
