@@ -105,28 +105,36 @@ const contentHost = new BoxRenderable(renderer, {
     width: '100%',
     alignItems: 'stretch',
     justifyContent: 'flex-start',
+    paddingTop: 1,
+    paddingBottom: 1,
 });
 
 const statusLine = new BoxRenderable(renderer, {
     id: 'status-line',
-    height: 1,
+    height: 2,
+    minHeight: 2,
     width: '100%',
     alignSelf: 'stretch',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     alignItems: 'flex-start',
-    paddingLeft: 1,
+    paddingLeft: 2,
+    paddingRight: 2,
+    border: true,
+    borderStyle: 'single',
 });
 
 function setStatusLineText(content: string, theme: UiTheme): void {
     const background =
-        theme?.panelBackgroundColor ??
         theme?.footerBackgroundColor ??
+        theme?.panelBackgroundColor ??
         theme?.backgroundColor ??
         '#111827';
 
-    const textColor = theme?.textColor ?? theme?.footerTextColor ?? '#E5E7EB';
+    const borderColor = theme?.footerBorderColor ?? theme?.borderColor ?? theme?.primaryColor ?? '#475569';
+    const textColor = theme?.footerTextColor ?? theme?.textColor ?? '#E5E7EB';
 
     statusLine.backgroundColor = background === 'transparent' ? '#111827' : background;
+    statusLine.borderColor = borderColor;
 
     const resolvedFg = textColor === 'transparent'
         ? '#E5E7EB'
@@ -140,7 +148,7 @@ function setStatusLineText(content: string, theme: UiTheme): void {
         content,
         fg: resolvedFg,
         attributes: TextAttributes.BOLD,
-        wrapMode: 'char',
+        wrapMode: 'word',
     }));
 }
 
@@ -224,6 +232,14 @@ renderer.keyInput.on("keypress", (key: KeyEvent) => {
             void settingsViewModel.selectThemeForMode(themeManager.getThemeId(), 'light').then(renderCurrentView);
             return;
         }
+    }
+
+    // Global home shortcut
+    if (keyName === 'q' && currentView !== 'menu') {
+        navigation.clear();
+        navigation.navigateTo('menu');
+        renderCurrentView();
+        return;
     }
 
     if (key.name === 'escape') {

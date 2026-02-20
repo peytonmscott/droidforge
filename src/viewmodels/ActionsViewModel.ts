@@ -31,6 +31,7 @@ export class ActionsViewModel {
     private _output: ActionOutput = { lines: [], scrollOffset: 0, exitCode: null };
     private _outputWindowSize = 20;
     private _currentProcess: Subprocess | null = null;
+    private _lastCommand: string | null = null;
     private _onOutputUpdate: (() => void) | null = null;
 
     constructor(workspace: WorkspaceService) {
@@ -93,6 +94,7 @@ export class ActionsViewModel {
     async runGradleCommand(command: string): Promise<void> {
         this._state = 'running';
         this._output = { lines: [], scrollOffset: 0, exitCode: null };
+        this._lastCommand = command;
         this._onOutputUpdate?.();
 
         const cwd = this._workspace.getCwd();
@@ -163,6 +165,37 @@ export class ActionsViewModel {
         const maxOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
         this._output.scrollOffset = Math.min(maxOffset, this._output.scrollOffset + lines);
         this._onOutputUpdate?.();
+    }
+
+    pageUp(): void {
+        const visibleLines = this._outputWindowSize;
+        this._output.scrollOffset = Math.max(0, this._output.scrollOffset - visibleLines);
+        this._onOutputUpdate?.();
+    }
+
+    pageDown(): void {
+        const visibleLines = this._outputWindowSize;
+        const maxOffset = Math.max(0, this._output.lines.length - visibleLines);
+        this._output.scrollOffset = Math.min(maxOffset, this._output.scrollOffset + visibleLines);
+        this._onOutputUpdate?.();
+    }
+
+    scrollToTop(): void {
+        this._output.scrollOffset = 0;
+        this._onOutputUpdate?.();
+    }
+
+    scrollToBottom(): void {
+        const visibleLines = this._outputWindowSize;
+        this._output.scrollOffset = Math.max(0, this._output.lines.length - visibleLines);
+        this._onOutputUpdate?.();
+    }
+
+    rerun(): void {
+        if (this._lastCommand) {
+            this.reset();
+            void this.runGradleCommand(this._lastCommand);
+        }
     }
 
     getOutputText(): string {
