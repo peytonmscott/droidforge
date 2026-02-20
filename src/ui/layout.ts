@@ -1,6 +1,7 @@
 import { BoxRenderable } from "@opentui/core";
 
 import type { UiTheme } from "./theme";
+import { LAYOUT } from "./constants";
 
 export const MENU_PANEL_MAX_WIDTH = 96;
 export const MENU_PANEL_MIN_WIDTH = 40;
@@ -30,6 +31,7 @@ export function menuHeaderSectionOptions() {
         alignItems: "flex-start",
         justifyContent: "flex-start",
         flexShrink: 0,
+        marginBottom: 0.5,
     } as const;
 }
 
@@ -46,7 +48,8 @@ export function menuPanelOptions(id: string, theme: UiTheme, overrides: Record<s
         borderStyle: "single",
         borderColor: theme.borderColor ?? "#475569",
         backgroundColor: theme.panelBackgroundColor ?? "transparent",
-        margin: 2,
+        margin: LAYOUT.PANEL_MARGIN,
+        padding: LAYOUT.PANEL_PADDING,
         ...overrides,
     } as const;
 }

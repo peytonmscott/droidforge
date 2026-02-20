@@ -4,6 +4,7 @@ import { GradleViewModel } from '../../viewmodels';
 import { MainHeader, SelectMenu } from '../components';
 import type { UiTheme } from '../theme';
 import { menuPanelOptions, wireCompactMenuLayout } from '../layout';
+import { SPACING } from "../constants";
 
 export interface GradleViewTitles {
     headerTitle: string;
@@ -29,6 +30,9 @@ export function GradleView(
     const header = MainHeader(renderer, titles.headerTitle, titles.panelTitle, theme);
     container.add(header);
 
+    const spacer = new BoxRenderable(renderer, { id: 'gradle-header-spacer', height: SPACING.NORMAL, flexShrink: 0 });
+    container.add(spacer);
+
     const selectContainer = new BoxRenderable(renderer, menuPanelOptions('gradle-menu-panel', theme));
 
     const selectMenu = SelectMenu(renderer, {
@@ -36,7 +40,7 @@ export function GradleView(
         options: viewModel.getMenuOptions(),
         autoFocus: true,
         theme,
-        itemSpacing: 0.5,
+        itemSpacing: 1,
         onSelect: (_index, option) => {
             const value = typeof option.value === 'string' ? option.value : '';
             const result = viewModel.handleMenuSelection(value);

@@ -45,6 +45,8 @@ export async function setupDIModules(workspace: import('../workspace').Workspace
     // Dynamic imports avoid circular deps and support Bun ESM modules.
     const { Database, ProjectRepository } = await import('../data/repositories');
     const { ThemeManager } = await import('../ui/theme');
+    const { AdbService } = await import('../adb/AdbService');
+    const { EmulatorService } = await import('../adb/EmulatorService');
     const {
         MainMenuViewModel,
         DashboardViewModel,
@@ -53,6 +55,10 @@ export async function setupDIModules(workspace: import('../workspace').Workspace
         AboutViewModel,
         ActionsViewModel,
         GradleViewModel,
+        DevicesViewModel,
+        MirrorViewModel,
+        LogcatViewModel,
+        AdbActionsViewModel,
     } = await import('../viewmodels');
 
     // Database singleton
@@ -66,6 +72,10 @@ export async function setupDIModules(workspace: import('../workspace').Workspace
 
     // Workspace singleton (created once at startup after chdir)
     diContainer.single('WorkspaceService', () => workspace);
+
+    // ADB services
+    diContainer.single('AdbService', () => new AdbService());
+    diContainer.single('EmulatorService', () => new EmulatorService(diContainer.get('AdbService')));
 
     // Tooling: placeholder for future LSP integration (e.g. Kotlin LSP)
     const { NoOpToolingService } = await import('../tooling');
@@ -82,6 +92,16 @@ export async function setupDIModules(workspace: import('../workspace').Workspace
     diContainer.factory('AboutViewModel', () => new AboutViewModel());
     diContainer.factory('ActionsViewModel', () => new ActionsViewModel(workspace));
     diContainer.factory('GradleViewModel', () => new GradleViewModel(workspace));
+    diContainer.factory('DevicesViewModel', () => new DevicesViewModel(
+        diContainer.get('AdbService'),
+        diContainer.get('EmulatorService')
+    ));
+    diContainer.factory('MirrorViewModel', () => new MirrorViewModel(diContainer.get('AdbService')));
+    diContainer.factory('LogcatViewModel', () => new LogcatViewModel(diContainer.get('AdbService')));
+    diContainer.factory('AdbActionsViewModel', () => new AdbActionsViewModel(
+        diContainer.get('AdbService'),
+        diContainer.get('WorkspaceService')
+    ));
 
     // Project-scoped Gradle menus (no toggle)
     diContainer.factory('HammerListViewModel', () => new GradleViewModel(workspace, { mode: 'curated', showToggle: false }));

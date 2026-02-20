@@ -8,3 +8,7 @@ export { GradleView } from './GradleView';
 export { ActionOutputView } from './ActionOutputView';
 export { ComingSoonView } from './ComingSoonView';
 export { ThemePickerView } from './ThemePickerView';
+export { DevicesView } from './DevicesView';
+export { MirrorView } from './MirrorView';
+export { LogcatView } from './LogcatView';
+export { AdbActionsView } from './AdbActionsView';

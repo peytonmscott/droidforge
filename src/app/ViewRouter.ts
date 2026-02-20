@@ -6,23 +6,27 @@ import type {
     ProjectsViewModel,
     MainMenuViewModel,
     DashboardViewModel,
-    ToolsViewModel,
     ActionsViewModel,
     SettingsViewModel,
     AboutViewModel,
-    GradleViewModel,
+    DevicesViewModel,
+    MirrorViewModel,
+    LogcatViewModel,
+    AdbActionsViewModel,
 } from '../viewmodels';
 import {
     MainMenuView,
     DashboardView,
     ProjectsView,
-    ToolsView,
     SettingsView,
     AboutView,
     ActionsView,
     ActionOutputView,
     ComingSoonView,
-    GradleView,
+    DevicesView,
+    MirrorView,
+    LogcatView,
+    AdbActionsView,
 } from '../ui/view';
 import type { WorkspaceService } from '../workspace';
 
@@ -40,6 +44,18 @@ export interface ViewRouterContext {
     onGoBackThenRender: () => void;
 }
 
+const VIEW_LABELS: Record<string, string> = {
+    menu: 'Main',
+    projects: 'Projects',
+    settings: 'Themes',
+    about: 'About',
+    devices: 'Devices',
+    adb: 'ADB Actions',
+    'app-logs': 'App Logs',
+    'device-logs': 'Device Logs',
+    'screen-mirror': 'Screen Mirror',
+};
+
 export function getStatusTextForView(
     view: string,
     diContainer: { get<T>(key: string): T }
@@ -48,27 +64,27 @@ export function getStatusTextForView(
         return 'j/k: scroll • c: copy • ESC: cancel/back';
     }
 
+    const label = VIEW_LABELS[view];
+    const sep = ' · ';
+
     switch (view) {
         case 'menu':
-            return '↑↓: navigate • ENTER: select • CTRL+C: quit';
+            return (label ? label + sep : '') + '↑↓: navigate • ENTER: select • CTRL+C: quit';
         case 'projects': {
             const vm = diContainer.get<ProjectsViewModel>('ProjectsViewModel');
-            return vm.getFooterText?.() ?? 'ESC: back';
+            const hint = vm.getFooterText?.() ?? 'ESC: back';
+            return (label ? label + sep : '') + hint;
         }
         case 'settings':
-            return 'ESC: back • M: mode • D/L: set dark/light • R: reload';
+            return (label ? label + sep : '') + 'ESC: back • M: mode • D/L: set dark/light • R: reload';
         case 'about':
-            return 'ESC: back • T: themes';
+            return (label ? label + sep : '') + 'ESC: back • T: themes';
         case 'dashboard':
-            return 'ESC: back • TAB: navigate • ENTER: select';
-        case 'tools':
-            return 'ESC: back';
+            return (label ? label + sep : '') + 'ESC: back • TAB: navigate • ENTER: select';
         case 'actions':
-        case 'hammer-list':
-        case 'blueprints':
-            return '↑↓: navigate • ENTER: select • ESC: back';
+            return (label ? label + sep : '') + '↑↓: navigate • ENTER: select • ESC: back';
         default:
-            return 'ESC: back';
+            return (label ? label + sep : '') + 'ESC: back';
     }
 }
 
@@ -131,6 +147,8 @@ export function renderView(currentView: string, ctx: ViewRouterContext): ViewRou
                                 const project = await projectRepo.getProjectById(id);
                                 if (!project?.path) return;
                                 process.chdir(project.path);
+                                const workspace = ctx.diContainer.get<WorkspaceService>('WorkspaceService');
+                                workspace.updateCwd(process.cwd());
                                 await projectRepo.saveProject({
                                     ...project,
                                     updatedAt: new Date(),
@@ -158,11 +176,6 @@ export function renderView(currentView: string, ctx: ViewRouterContext): ViewRou
             );
             return { view, statusText };
         }
-        case 'tools': {
-            const viewModel = ctx.diContainer.get<ToolsViewModel>('ToolsViewModel');
-            const view = ToolsView(ctx.renderer, viewModel, ctx.theme);
-            return { view, statusText };
-        }
         case 'actions': {
             const viewModel = ctx.diContainer.get<ActionsViewModel>('ActionsViewModel');
             const view = ActionsView(ctx.renderer, viewModel, ctx.theme, (action: string) => {
@@ -184,50 +197,62 @@ export function renderView(currentView: string, ctx: ViewRouterContext): ViewRou
             const view = AboutView(ctx.renderer, viewModel, ctx.theme);
             return { view, statusText };
         }
-        case 'hammer-list': {
-            const viewModel = ctx.diContainer.get<GradleViewModel>('HammerListViewModel');
-            const view = GradleView(
-                ctx.renderer,
-                viewModel,
-                ctx.theme,
-                (action: string) => {
-                    ctx.onNavigateThenRender(action);
-                },
-                { headerTitle: 'Hammer List', panelTitle: 'Pinned Gradle Tasks' }
-            );
-            return { view, statusText };
-        }
-        case 'blueprints': {
-            const viewModel = ctx.diContainer.get<GradleViewModel>('BlueprintsViewModel');
-            const view = GradleView(
-                ctx.renderer,
-                viewModel,
-                ctx.theme,
-                (action: string) => {
-                    ctx.onNavigateThenRender(action);
-                },
-                { headerTitle: 'Blueprints', panelTitle: 'All Gradle Tasks' }
-            );
-            return { view, statusText };
-        }
         case 'devices': {
-            const view = ComingSoonView(ctx.renderer, ctx.theme, 'Smithy', 'Device and emulator management is coming soon.');
+            const viewModel = ctx.diContainer.get<DevicesViewModel>('DevicesViewModel');
+            const view = DevicesView(
+                ctx.renderer,
+                viewModel,
+                ctx.theme,
+                (action: string, data?: string) => {
+                    ctx.onNavigateThenRender('menu');
+                },
+                (select) => {
+                    ctx.setSelectElement(select);
+                }
+            );
             return { view, statusText };
         }
         case 'adb': {
-            const view = ComingSoonView(ctx.renderer, ctx.theme, 'Command Tongs', 'ADB shortcuts are coming soon.');
+            const viewModel = ctx.diContainer.get<AdbActionsViewModel>('AdbActionsViewModel');
+            const view = AdbActionsView(ctx.renderer, viewModel, ctx.theme, (action: string) => {
+                if (action.startsWith('adb-output:')) {
+                    // For now, just go back - could show command output
+                    ctx.onGoBackThenRender();
+                } else {
+                    ctx.onNavigateThenRender(action);
+                }
+            });
             return { view, statusText };
         }
-        case 'kiln-view': {
-            const view = ComingSoonView(ctx.renderer, ctx.theme, 'Kiln View', 'App-focused Logcat is coming soon.');
-            return { view, statusText };
+        case 'app-logs': {
+            const viewModel = ctx.diContainer.get<LogcatViewModel>('LogcatViewModel');
+            const ws = ctx.diContainer.get<WorkspaceService>('WorkspaceService');
+            const projectName = ws.getCwd().split('/').pop() ?? 'app';
+            const view = LogcatView(
+                ctx.renderer,
+                viewModel,
+                { packageName: projectName },
+                ctx.theme,
+                ctx.setStatusText,
+                () => ctx.onGoBackThenRender()
+            );
+            return { view, statusText: 'j/k: scroll • p: pause • c: clear • ESC: back' };
         }
-        case 'foundry-logs': {
-            const view = ComingSoonView(ctx.renderer, ctx.theme, 'Foundry Logs', 'Full device Logcat browsing is coming soon.');
-            return { view, statusText };
+        case 'device-logs': {
+            const viewModel = ctx.diContainer.get<LogcatViewModel>('LogcatViewModel');
+            const view = LogcatView(
+                ctx.renderer,
+                viewModel,
+                {},
+                ctx.theme,
+                ctx.setStatusText,
+                () => ctx.onGoBackThenRender()
+            );
+            return { view, statusText: 'j/k: scroll • p: pause • c: clear • ESC: back' };
         }
-        case 'looking-glass': {
-            const view = ComingSoonView(ctx.renderer, ctx.theme, 'Looking Glass', 'Device mirroring is coming soon.');
+        case 'screen-mirror': {
+            const viewModel = ctx.diContainer.get<MirrorViewModel>('MirrorViewModel');
+            const view = MirrorView(ctx.renderer, viewModel, ctx.theme);
             return { view, statusText };
         }
         default: {

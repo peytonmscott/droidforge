@@ -7452,6 +7452,208 @@ var init_theme = __esm(() => {
   init_Theme();
 });
 
+// src/adb/parsers.ts
+function parseDevicesOutput(output2) {
+  const lines = output2.trim().split(`
+`).slice(1);
+  return lines.filter((line) => line.trim()).map((line) => {
+    const parts = line.split(/\s+/);
+    const serial = parts[0] ?? "";
+    const status = parts[1];
+    const device = {
+      serial,
+      status,
+      type: serial.startsWith("emulator-") ? "emulator" : serial.includes(".") ? "unknown" : "physical"
+    };
+    for (const part of parts.slice(2)) {
+      if (part.startsWith("model:"))
+        device.model = part.slice(6);
+      if (part.startsWith("product:"))
+        device.product = part.slice(8);
+      if (part.startsWith("device:"))
+        device.codename = part.slice(7);
+      if (part.startsWith("usb:") || part.includes(":"))
+        device.transport = part;
+    }
+    return device;
+  });
+}
+function parseGetpropOutput(output2) {
+  const props = {};
+  const regex = /\[([^\]]+)\]:\s*\[([^\]]*)\]/g;
+  let match;
+  while ((match = regex.exec(output2)) !== null) {
+    if (match[1] !== undefined && match[2] !== undefined) {
+      props[match[1]] = match[2];
+    }
+  }
+  return props;
+}
+function parseAvdList(output2) {
+  return output2.trim().split(`
+`).filter((line) => line.trim());
+}
+
+// src/adb/AdbService.ts
+var exports_AdbService = {};
+__export(exports_AdbService, {
+  AdbService: () => AdbService
+});
+
+class AdbService {
+  _adbPath = null;
+  _emulatorPath = null;
+  constructor() {
+    this.detectPaths();
+  }
+  detectPaths() {
+    this._adbPath = Bun.which("adb");
+    const androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+    if (androidHome) {
+      this._emulatorPath = `${androidHome}/emulator/emulator`;
+    } else {
+      this._emulatorPath = Bun.which("emulator");
+    }
+  }
+  isAvailable() {
+    return this._adbPath !== null;
+  }
+  getEmulatorPath() {
+    return this._emulatorPath;
+  }
+  async listDevices() {
+    if (!this._adbPath)
+      return [];
+    const output2 = await this.runCommand(["devices", "-l"]);
+    return parseDevicesOutput(output2);
+  }
+  async getDeviceProperties(serial) {
+    const output2 = await this.runCommand(["-s", serial, "shell", "getprop"]);
+    return parseGetpropOutput(output2);
+  }
+  async getDeviceMetadata(serial) {
+    const props = await this.getDeviceProperties(serial);
+    return {
+      manufacturer: props["ro.product.manufacturer"] ?? "Unknown",
+      model: props["ro.product.model"] ?? "Unknown",
+      brand: props["ro.product.brand"] ?? "Unknown",
+      device: props["ro.product.device"] ?? "Unknown",
+      androidVersion: props["ro.build.version.release"] ?? "Unknown",
+      apiLevel: parseInt(props["ro.build.version.sdk"] ?? "0", 10),
+      density: parseInt(props["ro.sf.lcd_density"] ?? "0", 10),
+      isEmulator: serial.startsWith("emulator-") || props["ro.build.characteristics"]?.includes("emulator") === true
+    };
+  }
+  async installApk(serial, apkPath) {
+    return this.runCommandWithResult(["-s", serial, "install", "-r", apkPath]);
+  }
+  async uninstallPackage(serial, packageName) {
+    return this.runCommandWithResult(["-s", serial, "uninstall", packageName]);
+  }
+  async clearAppData(serial, packageName) {
+    return this.runCommandWithResult(["-s", serial, "shell", "pm", "clear", packageName]);
+  }
+  async forceStop(serial, packageName) {
+    return this.runCommandWithResult(["-s", serial, "shell", "am", "force-stop", packageName]);
+  }
+  async listPackages(serial, thirdPartyOnly = true) {
+    const args = ["-s", serial, "shell", "pm", "list", "packages"];
+    if (thirdPartyOnly)
+      args.push("-3");
+    const output2 = await this.runCommand(args);
+    return output2.trim().split(`
+`).filter((line) => line.startsWith("package:")).map((line) => line.slice(8));
+  }
+  async getPackagePid(serial, packageName) {
+    const output2 = await this.runCommand(["-s", serial, "shell", "pidof", "-s", packageName]);
+    const pid = parseInt(output2.trim(), 10);
+    return isNaN(pid) ? null : pid;
+  }
+  async killEmulator(serial) {
+    await this.runCommand(["-s", serial, "emu", "kill"]);
+  }
+  spawnLogcat(serial, args = []) {
+    const cmd = [this._adbPath, "-s", serial, "logcat", ...args];
+    return Bun.spawn(cmd, {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+  }
+  async runCommand(args) {
+    if (!this._adbPath)
+      throw new Error("ADB not found");
+    const proc = Bun.spawn([this._adbPath, ...args], {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+    const stdout = await new Response(proc.stdout).text();
+    await proc.exited;
+    return stdout;
+  }
+  async runCommandWithResult(args) {
+    if (!this._adbPath) {
+      return { success: false, exitCode: -1, stdout: "", stderr: "ADB not found" };
+    }
+    const proc = Bun.spawn([this._adbPath, ...args], {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    const exitCode = await proc.exited;
+    return { success: exitCode === 0, exitCode, stdout, stderr };
+  }
+}
+var init_AdbService = () => {};
+
+// src/adb/EmulatorService.ts
+var exports_EmulatorService = {};
+__export(exports_EmulatorService, {
+  EmulatorService: () => EmulatorService
+});
+
+class EmulatorService {
+  _adb;
+  constructor(_adb) {
+    this._adb = _adb;
+  }
+  async listAvds() {
+    const emulatorPath = this._adb.getEmulatorPath();
+    if (!emulatorPath)
+      return [];
+    const proc = Bun.spawn([emulatorPath, "-list-avds"], {
+      stdout: "pipe",
+      stderr: "pipe"
+    });
+    const output2 = await new Response(proc.stdout).text();
+    const names = parseAvdList(output2);
+    const devices = await this._adb.listDevices();
+    const runningEmulators = devices.filter((d) => d.type === "emulator");
+    return names.map((name) => {
+      const running = runningEmulators.find((e) => e.model?.includes(name) || e.serial.includes(name.toLowerCase().replace(/_/g, "")));
+      return {
+        name,
+        isRunning: !!running,
+        serial: running?.serial
+      };
+    });
+  }
+  async startEmulator(avdName) {
+    const emulatorPath = this._adb.getEmulatorPath();
+    if (!emulatorPath)
+      throw new Error("Emulator not found");
+    Bun.spawn([emulatorPath, "-avd", avdName, "-no-snapshot-load"], {
+      stdout: "ignore",
+      stderr: "ignore",
+      stdin: "ignore"
+    });
+  }
+  async stopEmulator(serial) {
+    await this._adb.killEmulator(serial);
+  }
+}
+var init_EmulatorService = () => {};
+
 // src/viewmodels/MainMenuViewModel.ts
 class MainMenuViewModel {
   forgeMenuOptions = [
@@ -8212,20 +8414,605 @@ var init_GradleViewModel = __esm(() => {
   };
 });
 
+// src/viewmodels/DevicesViewModel.ts
+class DevicesViewModel {
+  _adb;
+  _emulator;
+  _devices = [];
+  _avds = [];
+  _loading = true;
+  _error = null;
+  _onMenuUpdate = null;
+  constructor(_adb, _emulator) {
+    this._adb = _adb;
+    this._emulator = _emulator;
+    this.refresh();
+  }
+  setMenuUpdateCallback(callback) {
+    this._onMenuUpdate = callback;
+    this._onMenuUpdate?.();
+  }
+  get isLoading() {
+    return this._loading;
+  }
+  getError() {
+    return this._error;
+  }
+  async refresh() {
+    this._loading = true;
+    this._error = null;
+    this._onMenuUpdate?.();
+    try {
+      if (!this._adb.isAvailable()) {
+        this._error = "ADB not found. Install Android SDK platform-tools.";
+        this._devices = [];
+        this._avds = [];
+      } else {
+        this._devices = await this._adb.listDevices();
+        this._avds = await this._emulator.listAvds();
+      }
+    } catch (err) {
+      this._error = err instanceof Error ? err.message : "Failed to load devices";
+    }
+    this._loading = false;
+    this._onMenuUpdate?.();
+  }
+  async startEmulator(avdName) {
+    await this._emulator.startEmulator(avdName);
+    await new Promise((r) => setTimeout(r, 2000));
+    await this.refresh();
+    const running = this._avds.find((a) => a.name === avdName && a.isRunning);
+    return running?.serial ?? "";
+  }
+  async stopEmulator(serial) {
+    await this._emulator.stopEmulator(serial);
+    await this.refresh();
+  }
+  getDevices() {
+    return this._devices;
+  }
+  getAvds() {
+    return this._avds;
+  }
+  getMenuOptions() {
+    if (this._loading) {
+      return [{ name: "Loading...", value: "__loading__", disabled: true }];
+    }
+    if (this._error) {
+      return [{ name: `Error: ${this._error}`, value: "__error__", disabled: true }];
+    }
+    const options = [];
+    if (this._devices.length > 0) {
+      options.push({ name: "\u2500\u2500 Connected Devices \u2500\u2500", value: "__header__", disabled: true });
+      for (const device of this._devices) {
+        const statusIcon = device.status === "device" ? "\u25CF" : "\u25CB";
+        const typeLabel = device.type === "emulator" ? "emulator" : "device";
+        options.push({
+          name: `${statusIcon} ${device.model || device.serial}`,
+          description: `${device.status} | ${typeLabel}`,
+          value: `device:${device.serial}`
+        });
+      }
+    }
+    if (this._avds.length > 0) {
+      options.push({ name: "\u2500\u2500 Available Emulators \u2500\u2500", value: "__header__", disabled: true });
+      for (const avd of this._avds) {
+        const statusIcon = avd.isRunning ? "\u25CF" : "\u25CB";
+        const statusText = avd.isRunning ? `Running (${avd.serial})` : "Stopped";
+        options.push({
+          name: `${statusIcon} ${avd.name}`,
+          description: statusText,
+          value: avd.isRunning ? `stop-emulator:${avd.serial}` : `start-emulator:${avd.name}`
+        });
+      }
+    }
+    if (options.length === 0) {
+      options.push({ name: "No devices or emulators found", value: "__empty__", disabled: true });
+    }
+    options.push({ name: "\u2500\u2500 Actions \u2500\u2500", value: "__header__", disabled: true });
+    options.push({ name: "Refresh", description: "Reload device list", value: "refresh" });
+    return options;
+  }
+  async handleMenuSelection(value) {
+    if (value === "refresh") {
+      await this.refresh();
+      return { action: "refreshed" };
+    }
+    if (value.startsWith("start-emulator:")) {
+      const avdName = value.slice("start-emulator:".length);
+      const serial = await this.startEmulator(avdName);
+      return { action: "emulator-started", data: serial };
+    }
+    if (value.startsWith("stop-emulator:")) {
+      const serial = value.slice("stop-emulator:".length);
+      await this.stopEmulator(serial);
+      return { action: "emulator-stopped" };
+    }
+    if (value.startsWith("device:")) {
+      const serial = value.slice("device:".length);
+      return { action: "device-selected", data: serial };
+    }
+    return { action: "none" };
+  }
+}
+
+// src/viewmodels/MirrorViewModel.ts
+class MirrorViewModel {
+  _adb;
+  _devices = [];
+  _selectedDevice = null;
+  _scrcpyPath = null;
+  _loading = false;
+  _error = null;
+  _message = null;
+  _onMenuUpdate = null;
+  constructor(_adb) {
+    this._adb = _adb;
+    this._scrcpyPath = Bun.which("scrcpy");
+    this.loadDevices();
+  }
+  setMenuUpdateCallback(callback) {
+    this._onMenuUpdate = callback;
+  }
+  notifyUpdate() {
+    this._onMenuUpdate?.();
+  }
+  hasScrcpy() {
+    return this._scrcpyPath !== null;
+  }
+  async loadDevices() {
+    if (!this._adb.isAvailable()) {
+      this._error = "ADB not found";
+      this.notifyUpdate();
+      return;
+    }
+    this._loading = true;
+    this.notifyUpdate();
+    try {
+      const devices = await this._adb.listDevices();
+      this._devices = devices.filter((d) => d.status === "device").map((d) => ({ serial: d.serial, model: d.model || d.serial }));
+      if (this._devices.length === 1 && this._devices[0]) {
+        this._selectedDevice = this._devices[0].serial;
+      }
+    } catch (err) {
+      this._error = err instanceof Error ? err.message : "Failed to load devices";
+    }
+    this._loading = false;
+    this.notifyUpdate();
+  }
+  getDevices() {
+    return this._devices;
+  }
+  getSelectedDevice() {
+    return this._selectedDevice;
+  }
+  getMessage() {
+    return this._message;
+  }
+  selectDevice(serial) {
+    this._selectedDevice = serial;
+    this.notifyUpdate();
+  }
+  getMenuOptions() {
+    if (this._loading) {
+      return [{ name: "Loading...", value: "__loading__", disabled: true }];
+    }
+    if (!this.hasScrcpy()) {
+      return [
+        { name: "scrcpy not found", description: "Install: brew install scrcpy", value: "__error__", disabled: true }
+      ];
+    }
+    if (this._error) {
+      return [{ name: `Error: ${this._error}`, value: "__error__", disabled: true }];
+    }
+    const options = [];
+    if (this._devices.length === 0) {
+      return [{ name: "No devices connected", value: "__empty__", disabled: true }];
+    }
+    if (this._devices.length > 1) {
+      options.push({ name: "\u2500\u2500 Select Device \u2500\u2500", value: "__header__", disabled: true });
+      for (const device of this._devices) {
+        const selected = device.serial === this._selectedDevice ? "\u25CF " : "\u25CB ";
+        options.push({
+          name: `${selected}${device.model}`,
+          description: device.serial,
+          value: `select-device:${device.serial}`
+        });
+      }
+      options.push({ name: "", value: "__spacer__", disabled: true });
+    }
+    if (this._selectedDevice) {
+      options.push({
+        name: "Start Mirroring",
+        description: "Launch scrcpy to mirror device screen",
+        value: "start-mirror"
+      });
+    }
+    if (this._message) {
+      options.push({ name: "", value: "__spacer__", disabled: true });
+      options.push({ name: this._message, value: "__message__", disabled: true });
+    }
+    return options;
+  }
+  handleMenuSelection(value) {
+    if (value.startsWith("select-device:")) {
+      const serial = value.slice("select-device:".length);
+      this.selectDevice(serial);
+      return { action: "device-selected" };
+    }
+    if (value === "start-mirror" && this._selectedDevice && this._scrcpyPath) {
+      Bun.spawn([this._scrcpyPath, "--serial", this._selectedDevice, "--no-audio"], {
+        stdio: ["ignore", "ignore", "ignore"]
+      });
+      this._message = "Mirroring started in separate window";
+      this.notifyUpdate();
+      return { action: "mirroring-started" };
+    }
+    return { action: "none" };
+  }
+}
+
+// src/utilities/logcatParser.ts
+function parseLogcatLine(line) {
+  const threadtimeMatch = line.match(/^(\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEF])\s+([^:]+):\s*(.*)$/);
+  if (threadtimeMatch) {
+    return {
+      raw: line,
+      timestamp: threadtimeMatch[1],
+      pid: parseInt(threadtimeMatch[2], 10),
+      tid: parseInt(threadtimeMatch[3], 10),
+      level: threadtimeMatch[4],
+      tag: threadtimeMatch[5].trim(),
+      message: threadtimeMatch[6]
+    };
+  }
+  const briefMatch = line.match(/^([VDIWEF])\/([^\(]+)\((\d+)\):\s*(.*)$/);
+  if (briefMatch) {
+    return {
+      raw: line,
+      pid: parseInt(briefMatch[3], 10),
+      level: briefMatch[1],
+      tag: briefMatch[2].trim(),
+      message: briefMatch[4]
+    };
+  }
+  return {
+    raw: line,
+    level: "?",
+    message: line
+  };
+}
+function colorizeLogLevel(level) {
+  const colors = {
+    V: "\x1B[90m",
+    D: "\x1B[36m",
+    I: "\x1B[32m",
+    W: "\x1B[33m",
+    E: "\x1B[31m",
+    F: "\x1B[35m",
+    "?": "\x1B[0m"
+  };
+  return colors[level] ?? "\x1B[0m";
+}
+function formatLogcatLine(line) {
+  const color = colorizeLogLevel(line.level);
+  const reset = "\x1B[0m";
+  if (line.tag) {
+    return `${color}${line.level}/${line.tag}${reset}: ${line.message}`;
+  }
+  return `${color}${line.message}${reset}`;
+}
+var init_logcatParser = () => {};
+
+// src/viewmodels/LogcatViewModel.ts
+class LogcatViewModel {
+  _adb;
+  _state = "idle";
+  _output = { lines: [], scrollOffset: 0, exitCode: null };
+  _currentProcess = null;
+  _onOutputUpdate = null;
+  _outputWindowSize = 20;
+  _filterText = "";
+  _maxLines = 5000;
+  _config = {};
+  constructor(_adb) {
+    this._adb = _adb;
+  }
+  setOutputUpdateCallback(callback) {
+    this._onOutputUpdate = callback;
+  }
+  setOutputWindowSize(size) {
+    this._outputWindowSize = size;
+  }
+  get state() {
+    return this._state;
+  }
+  get output() {
+    return this._output;
+  }
+  setConfig(config) {
+    this._config = config;
+  }
+  async startStream() {
+    if (this._state === "running")
+      return;
+    const { deviceId, packageName, logLevel = "V" } = this._config;
+    if (!deviceId) {
+      this._state = "error";
+      this._onOutputUpdate?.();
+      return;
+    }
+    const args = ["-v", "threadtime"];
+    if (packageName) {
+      const pid = await this._adb.getPackagePid(deviceId, packageName);
+      if (pid) {
+        args.push("--pid", String(pid));
+      }
+    }
+    args.push(`*:${logLevel}`);
+    this._state = "running";
+    this._output = { lines: [], scrollOffset: 0, exitCode: null };
+    this._onOutputUpdate?.();
+    this._currentProcess = this._adb.spawnLogcat(deviceId, args);
+    this.streamOutput(this._currentProcess.stdout);
+    this.streamOutput(this._currentProcess.stderr);
+  }
+  async streamOutput(stream) {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder;
+    let pending = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done)
+        break;
+      pending += decoder.decode(value, { stream: true });
+      const parts = pending.split(`
+`);
+      pending = parts.pop() ?? "";
+      for (const line of parts) {
+        if (line.trim() && this._state !== "paused") {
+          this.addLine(line);
+        }
+      }
+      this._onOutputUpdate?.();
+    }
+  }
+  addLine(rawLine) {
+    const parsed = parseLogcatLine(rawLine);
+    this._output.lines.push(parsed);
+    if (this._output.lines.length > this._maxLines) {
+      const excess = this._output.lines.length - this._maxLines;
+      this._output.lines.splice(0, excess);
+      this._output.scrollOffset = Math.max(0, this._output.scrollOffset - excess);
+    }
+    this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+  }
+  pauseStream() {
+    this._state = "paused";
+    this._onOutputUpdate?.();
+  }
+  resumeStream() {
+    this._state = "running";
+    this._onOutputUpdate?.();
+  }
+  stopStream() {
+    if (this._currentProcess) {
+      this._currentProcess.kill();
+      this._currentProcess = null;
+    }
+    this._state = "idle";
+    this._onOutputUpdate?.();
+  }
+  clearBuffer() {
+    this._output.lines = [];
+    this._output.scrollOffset = 0;
+    this._onOutputUpdate?.();
+  }
+  scrollUp(lines = 1) {
+    this._output.scrollOffset = Math.max(0, this._output.scrollOffset - lines);
+    this._onOutputUpdate?.();
+  }
+  scrollDown(lines = 1) {
+    const maxOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+    this._output.scrollOffset = Math.min(maxOffset, this._output.scrollOffset + lines);
+    this._onOutputUpdate?.();
+  }
+  pageUp() {
+    this.scrollUp(this._outputWindowSize);
+  }
+  pageDown() {
+    this.scrollDown(this._outputWindowSize);
+  }
+  scrollToTop() {
+    this._output.scrollOffset = 0;
+    this._onOutputUpdate?.();
+  }
+  scrollToBottom() {
+    this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+    this._onOutputUpdate?.();
+  }
+  getVisibleLines() {
+    return this._output.lines.slice(this._output.scrollOffset, this._output.scrollOffset + this._outputWindowSize);
+  }
+  getOutputText() {
+    return this._output.lines.map((l) => l.raw).join(`
+`);
+  }
+}
+var init_LogcatViewModel = __esm(() => {
+  init_logcatParser();
+});
+
+// src/viewmodels/AdbActionsViewModel.ts
+class AdbActionsViewModel {
+  _adb;
+  _workspace;
+  _devices = [];
+  _selectedDevice = null;
+  _packages = [];
+  _loading = false;
+  _error = null;
+  _onMenuUpdate = null;
+  constructor(_adb, _workspace) {
+    this._adb = _adb;
+    this._workspace = _workspace;
+    this.loadDevices();
+  }
+  setMenuUpdateCallback(callback) {
+    this._onMenuUpdate = callback;
+  }
+  notifyUpdate() {
+    this._onMenuUpdate?.();
+  }
+  getSelectedDevice() {
+    return this._selectedDevice;
+  }
+  async loadDevices() {
+    if (!this._adb.isAvailable()) {
+      this._error = "ADB not found";
+      this.notifyUpdate();
+      return;
+    }
+    this._loading = true;
+    this.notifyUpdate();
+    try {
+      const devices = await this._adb.listDevices();
+      this._devices = devices.filter((d) => d.status === "device").map((d) => ({ serial: d.serial, model: d.model ?? d.serial }));
+      if (this._devices.length === 1 && this._devices[0]) {
+        this._selectedDevice = this._devices[0].serial;
+        await this.loadPackages();
+      }
+    } catch (err) {
+      this._error = err instanceof Error ? err.message : "Failed to load devices";
+    }
+    this._loading = false;
+    this.notifyUpdate();
+  }
+  async selectDevice(serial) {
+    this._selectedDevice = serial;
+    await this.loadPackages();
+  }
+  async loadPackages() {
+    if (!this._selectedDevice)
+      return;
+    try {
+      this._packages = await this._adb.listPackages(this._selectedDevice, true);
+    } catch {
+      this._packages = [];
+    }
+    this.notifyUpdate();
+  }
+  getPackages() {
+    return this._packages;
+  }
+  getMenuOptions() {
+    if (this._loading) {
+      return [{ name: "Loading...", value: "__loading__", disabled: true }];
+    }
+    if (this._error) {
+      return [{ name: `Error: ${this._error}`, value: "__error__", disabled: true }];
+    }
+    const options = [];
+    if (this._devices.length === 0) {
+      return [{ name: "No devices connected", value: "__empty__", disabled: true }];
+    }
+    if (this._devices.length > 1) {
+      options.push({ name: "\u2500\u2500 Select Device \u2500\u2500", value: "__header__", disabled: true });
+      for (const device of this._devices) {
+        const selected = device.serial === this._selectedDevice ? "\u25CF " : "\u25CB ";
+        options.push({
+          name: `${selected}${device.model}`,
+          description: device.serial,
+          value: `select-device:${device.serial}`
+        });
+      }
+      options.push({ name: "", value: "__spacer__", disabled: true });
+    }
+    if (this._selectedDevice) {
+      options.push({ name: "\u2500\u2500 App Actions \u2500\u2500", value: "__header__", disabled: true });
+      const projectPath = this._workspace.getCwd();
+      const hasApk = projectPath;
+      options.push({
+        name: "Install APK",
+        description: hasApk ? "Install from project build" : "Install APK file",
+        value: "install-apk"
+      });
+      options.push({
+        name: "Uninstall Package",
+        description: "Remove an installed app",
+        value: "uninstall-package"
+      });
+      options.push({
+        name: "Clear App Data",
+        description: "Clear data and cache",
+        value: "clear-data"
+      });
+      options.push({
+        name: "Force Stop App",
+        description: "Kill a running app",
+        value: "force-stop"
+      });
+      options.push({ name: "\u2500\u2500 Device Actions \u2500\u2500", value: "__header__", disabled: true });
+      options.push({
+        name: "Take Screenshot",
+        description: "Save screenshot to device",
+        value: "screenshot"
+      });
+      options.push({
+        name: "Reboot Device",
+        description: "Restart the device",
+        value: "reboot"
+      });
+    }
+    return options;
+  }
+  async handleMenuSelection(value) {
+    if (value.startsWith("select-device:")) {
+      const serial = value.slice("select-device:".length);
+      await this.selectDevice(serial);
+      return { action: "device-selected" };
+    }
+    if (!this._selectedDevice) {
+      return { action: "no-device" };
+    }
+    switch (value) {
+      case "install-apk":
+        return { action: "navigate", command: `adb-install:${this._selectedDevice}` };
+      case "uninstall-package":
+        return { action: "navigate", command: `adb-uninstall:${this._selectedDevice}` };
+      case "clear-data":
+        return { action: "navigate", command: `adb-clear:${this._selectedDevice}` };
+      case "force-stop":
+        return { action: "navigate", command: `adb-forcestop:${this._selectedDevice}` };
+      case "screenshot":
+        return { action: "navigate", command: `adb-screenshot:${this._selectedDevice}` };
+      case "reboot":
+        return { action: "navigate", command: `adb-reboot:${this._selectedDevice}` };
+      default:
+        return { action: "none" };
+    }
+  }
+}
+
 // src/viewmodels/index.ts
 var exports_viewmodels = {};
 __export(exports_viewmodels, {
   SettingsViewModel: () => SettingsViewModel,
   ProjectsViewModel: () => ProjectsViewModel,
+  MirrorViewModel: () => MirrorViewModel,
   MainMenuViewModel: () => MainMenuViewModel,
+  LogcatViewModel: () => LogcatViewModel,
   GradleViewModel: () => GradleViewModel,
+  DevicesViewModel: () => DevicesViewModel,
   DashboardViewModel: () => DashboardViewModel,
+  AdbActionsViewModel: () => AdbActionsViewModel,
   ActionsViewModel: () => ActionsViewModel,
   AboutViewModel: () => AboutViewModel
 });
 var init_viewmodels = __esm(() => {
   init_ActionsViewModel();
   init_GradleViewModel();
+  init_LogcatViewModel();
 });
 
 // src/tooling/ToolingService.ts
@@ -8270,6 +9057,8 @@ class DIContainer {
 async function setupDIModules(workspace) {
   const { Database: Database2, ProjectRepository: ProjectRepository2 } = await Promise.resolve().then(() => (init_repositories(), exports_repositories));
   const { ThemeManager: ThemeManager2 } = await Promise.resolve().then(() => (init_theme(), exports_theme));
+  const { AdbService: AdbService2 } = await Promise.resolve().then(() => (init_AdbService(), exports_AdbService));
+  const { EmulatorService: EmulatorService2 } = await Promise.resolve().then(() => (init_EmulatorService(), exports_EmulatorService));
   const {
     MainMenuViewModel: MainMenuViewModel2,
     DashboardViewModel: DashboardViewModel2,
@@ -8277,12 +9066,18 @@ async function setupDIModules(workspace) {
     SettingsViewModel: SettingsViewModel2,
     AboutViewModel: AboutViewModel2,
     ActionsViewModel: ActionsViewModel2,
-    GradleViewModel: GradleViewModel2
+    GradleViewModel: GradleViewModel2,
+    DevicesViewModel: DevicesViewModel2,
+    MirrorViewModel: MirrorViewModel2,
+    LogcatViewModel: LogcatViewModel2,
+    AdbActionsViewModel: AdbActionsViewModel2
   } = await Promise.resolve().then(() => (init_viewmodels(), exports_viewmodels));
   diContainer.single("Database", () => new Database2);
   diContainer.single("ProjectRepository", () => new ProjectRepository2(diContainer.get("Database")));
   diContainer.single("ThemeManager", () => new ThemeManager2(diContainer.get("WorkspaceService")));
   diContainer.single("WorkspaceService", () => workspace);
+  diContainer.single("AdbService", () => new AdbService2);
+  diContainer.single("EmulatorService", () => new EmulatorService2(diContainer.get("AdbService")));
   const { NoOpToolingService: NoOpToolingService2 } = await Promise.resolve().then(() => (init_tooling(), exports_tooling));
   diContainer.single("ToolingService", () => new NoOpToolingService2);
   diContainer.factory("MainMenuViewModel", () => new MainMenuViewModel2);
@@ -8292,6 +9087,10 @@ async function setupDIModules(workspace) {
   diContainer.factory("AboutViewModel", () => new AboutViewModel2);
   diContainer.factory("ActionsViewModel", () => new ActionsViewModel2(workspace));
   diContainer.factory("GradleViewModel", () => new GradleViewModel2(workspace));
+  diContainer.factory("DevicesViewModel", () => new DevicesViewModel2(diContainer.get("AdbService"), diContainer.get("EmulatorService")));
+  diContainer.factory("MirrorViewModel", () => new MirrorViewModel2(diContainer.get("AdbService")));
+  diContainer.factory("LogcatViewModel", () => new LogcatViewModel2(diContainer.get("AdbService")));
+  diContainer.factory("AdbActionsViewModel", () => new AdbActionsViewModel2(diContainer.get("AdbService"), diContainer.get("WorkspaceService")));
   diContainer.factory("HammerListViewModel", () => new GradleViewModel2(workspace, { mode: "curated", showToggle: false }));
   diContainer.factory("BlueprintsViewModel", () => new GradleViewModel2(workspace, { mode: "all", showToggle: false }));
 }
@@ -9371,7 +10170,8 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setS
     borderStyle: "single",
     borderColor: theme.borderColor ?? "#475569",
     backgroundColor: theme.panelBackgroundColor ?? "transparent",
-    margin: 1,
+    margin: SPACING.NORMAL,
+    padding: SPACING.NORMAL,
     onSizeChange: function() {
       viewModel.setOutputWindowSize(Math.max(1, this.height - 2));
     }
@@ -9522,6 +10322,7 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setS
 }
 var init_ActionOutputView = __esm(() => {
   init_utilities();
+  init_constants();
 });
 
 // src/ui/view/ComingSoonView.ts
@@ -9564,6 +10365,279 @@ var init_ComingSoonView = __esm(() => {
   init_layout();
 });
 
+// src/ui/view/DevicesView.ts
+import { BoxRenderable as BoxRenderable14 } from "@opentui/core";
+function DevicesView(renderer, viewModel, theme, onNavigate, onSelectCreated) {
+  const container = new BoxRenderable14(renderer, {
+    id: "devices-container",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "column",
+    flexGrow: 1,
+    backgroundColor: theme.backgroundColor ?? "transparent"
+  });
+  const header = Header(renderer, "Devices", "Connected devices and emulators", theme);
+  container.add(header);
+  const selectContainer = new BoxRenderable14(renderer, menuPanelOptions("devices-panel", theme));
+  const selectMenu = SelectMenu(renderer, {
+    id: "devices-select",
+    options: viewModel.getMenuOptions(),
+    autoFocus: true,
+    theme,
+    itemSpacing: 1,
+    onSelect: async (_index, option) => {
+      const value = typeof option.value === "string" ? option.value : "";
+      const result = await viewModel.handleMenuSelection(value);
+      if (onNavigate && result.action !== "none" && result.action !== "refreshed") {
+        onNavigate(result.action, result.data);
+      }
+    }
+  });
+  wireCompactMenuLayout(selectContainer, selectMenu);
+  function refreshMenu() {
+    selectMenu.options = viewModel.getMenuOptions();
+  }
+  viewModel.setMenuUpdateCallback(refreshMenu);
+  selectContainer.add(selectMenu);
+  container.add(selectContainer);
+  onSelectCreated?.(selectMenu);
+  return container;
+}
+var init_DevicesView = __esm(() => {
+  init_components();
+  init_layout();
+});
+
+// src/ui/view/MirrorView.ts
+import { BoxRenderable as BoxRenderable15 } from "@opentui/core";
+function MirrorView(renderer, viewModel, theme, onNavigate) {
+  const container = new BoxRenderable15(renderer, {
+    id: "mirror-container",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "column",
+    flexGrow: 1,
+    backgroundColor: theme.backgroundColor ?? "transparent"
+  });
+  const header = Header(renderer, "Screen Mirror", "Mirror device display via scrcpy", theme);
+  container.add(header);
+  const selectContainer = new BoxRenderable15(renderer, menuPanelOptions("mirror-panel", theme));
+  const selectMenu = SelectMenu(renderer, {
+    id: "mirror-select",
+    options: viewModel.getMenuOptions(),
+    autoFocus: true,
+    theme,
+    itemSpacing: 1,
+    onSelect: (_index, option) => {
+      const value = typeof option.value === "string" ? option.value : "";
+      viewModel.handleMenuSelection(value);
+    }
+  });
+  wireCompactMenuLayout(selectContainer, selectMenu);
+  function refreshMenu() {
+    selectMenu.options = viewModel.getMenuOptions();
+  }
+  viewModel.setMenuUpdateCallback(refreshMenu);
+  selectContainer.add(selectMenu);
+  container.add(selectContainer);
+  return container;
+}
+var init_MirrorView = __esm(() => {
+  init_components();
+  init_layout();
+});
+
+// src/ui/view/LogcatView.ts
+import { BoxRenderable as BoxRenderable16, Text as Text9, TextAttributes as TextAttributes8 } from "@opentui/core";
+function LogcatView(renderer, viewModel, config, theme, setStatusText, onBack) {
+  const container = new BoxRenderable16(renderer, {
+    id: "logcat-container",
+    flexDirection: "column",
+    flexGrow: 1,
+    backgroundColor: theme.backgroundColor ?? "transparent"
+  });
+  const title = config.packageName ? `App Logs: ${config.packageName}` : "Device Logs";
+  const header = Header(renderer, title, config.deviceId ?? "All devices", theme);
+  container.add(header);
+  const outputPanel = new BoxRenderable16(renderer, {
+    id: "logcat-output-panel",
+    flexGrow: 1,
+    border: true,
+    borderStyle: "single",
+    borderColor: theme.borderColor ?? "#475569",
+    backgroundColor: theme.panelBackgroundColor ?? "transparent",
+    margin: SPACING.COMFORTABLE,
+    padding: SPACING.NORMAL,
+    onSizeChange: function() {
+      viewModel.setOutputWindowSize(Math.max(1, this.height - 2));
+    }
+  });
+  let outputText = Text9({
+    id: "logcat-output-text",
+    content: "",
+    attributes: TextAttributes8.NONE,
+    fg: theme.textColor,
+    flexGrow: 1,
+    wrapMode: "char"
+  });
+  outputPanel.add(outputText);
+  container.add(outputPanel);
+  function getVisibleLineCount() {
+    return Math.max(1, outputPanel.height - 2);
+  }
+  let liveRequested = false;
+  const ensureLive = () => {
+    if (liveRequested)
+      return;
+    if (typeof renderer.requestLive === "function") {
+      renderer.requestLive();
+    }
+    liveRequested = true;
+  };
+  const dropLive = () => {
+    if (!liveRequested)
+      return;
+    if (typeof renderer.dropLive === "function") {
+      renderer.dropLive();
+    }
+    liveRequested = false;
+  };
+  function updateOutput() {
+    const state = viewModel.state;
+    if (state === "running") {
+      ensureLive();
+    } else {
+      dropLive();
+    }
+    viewModel.setOutputWindowSize(getVisibleLineCount());
+    const visibleLines = viewModel.getVisibleLines();
+    const formatted = visibleLines.map((l) => formatLogcatLine(l)).join(`
+`);
+    outputText = Text9({
+      id: "logcat-output-text",
+      content: formatted,
+      attributes: TextAttributes8.NONE,
+      fg: theme.textColor,
+      flexGrow: 1,
+      wrapMode: "char"
+    });
+    outputPanel.remove("logcat-output-text");
+    outputPanel.add(outputText);
+    const stateIcons = {
+      idle: "\u23F8",
+      running: "\u23F3",
+      paused: "\u23F8",
+      error: "\u274C"
+    };
+    const stateIcon = stateIcons[state];
+    const output2 = viewModel.output;
+    const scrollInfo = `[${output2.scrollOffset + 1}-${Math.min(output2.scrollOffset + getVisibleLineCount(), output2.lines.length)}/${output2.lines.length}]`;
+    setStatusText?.(`${stateIcon} ${state} ${scrollInfo} \u2022 j/k: scroll \u2022 p: pause \u2022 c: clear \u2022 ESC: back`);
+  }
+  viewModel.setOutputUpdateCallback(updateOutput);
+  const keyHandler = (key) => {
+    switch (key.name) {
+      case "j":
+      case "down":
+        viewModel.scrollDown();
+        break;
+      case "k":
+      case "up":
+        viewModel.scrollUp();
+        break;
+      case "pageup":
+        viewModel.pageUp();
+        break;
+      case "pagedown":
+        viewModel.pageDown();
+        break;
+      case "home":
+        viewModel.scrollToTop();
+        break;
+      case "end":
+        viewModel.scrollToBottom();
+        break;
+      case "p":
+        if (viewModel.state === "running") {
+          viewModel.pauseStream();
+        } else if (viewModel.state === "paused") {
+          viewModel.resumeStream();
+        }
+        break;
+      case "c":
+        viewModel.clearBuffer();
+        break;
+      case "escape":
+        viewModel.stopStream();
+        dropLive();
+        if (onBack)
+          onBack();
+        break;
+    }
+  };
+  renderer.keyInput.on("keypress", keyHandler);
+  container.__dispose = () => {
+    dropLive();
+    viewModel.stopStream();
+    viewModel.setOutputUpdateCallback(() => {
+      return;
+    });
+  };
+  viewModel.setConfig(config);
+  ensureLive();
+  viewModel.startStream();
+  return container;
+}
+var init_LogcatView = __esm(() => {
+  init_components();
+  init_constants();
+  init_logcatParser();
+});
+
+// src/ui/view/AdbActionsView.ts
+import { BoxRenderable as BoxRenderable17 } from "@opentui/core";
+function AdbActionsView(renderer, viewModel, theme, onNavigate) {
+  const container = new BoxRenderable17(renderer, {
+    id: "adb-actions-container",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "column",
+    flexGrow: 1,
+    backgroundColor: theme.backgroundColor ?? "transparent"
+  });
+  const device = viewModel.getSelectedDevice();
+  const subtitle = device ? `Device: ${device}` : "Quick device commands";
+  const header = Header(renderer, "ADB Actions", subtitle, theme);
+  container.add(header);
+  const selectContainer = new BoxRenderable17(renderer, menuPanelOptions("adb-actions-panel", theme));
+  const selectMenu = SelectMenu(renderer, {
+    id: "adb-actions-select",
+    options: viewModel.getMenuOptions(),
+    autoFocus: true,
+    theme,
+    itemSpacing: 1,
+    onSelect: async (_index, option) => {
+      const value = typeof option.value === "string" ? option.value : "";
+      const result = await viewModel.handleMenuSelection(value);
+      if (result.action === "navigate" && result.command && onNavigate) {
+        onNavigate(`adb-output:${result.command}`);
+      }
+    }
+  });
+  wireCompactMenuLayout(selectContainer, selectMenu);
+  function refreshMenu() {
+    selectMenu.options = viewModel.getMenuOptions();
+  }
+  viewModel.setMenuUpdateCallback(refreshMenu);
+  selectContainer.add(selectMenu);
+  container.add(selectContainer);
+  return container;
+}
+var init_AdbActionsView = __esm(() => {
+  init_components();
+  init_layout();
+});
+
 // src/ui/view/index.ts
 var init_view = __esm(() => {
   init_MainMenuView();
@@ -9576,6 +10650,10 @@ var init_view = __esm(() => {
   init_ActionOutputView();
   init_ComingSoonView();
   init_ThemePickerView();
+  init_DevicesView();
+  init_MirrorView();
+  init_LogcatView();
+  init_AdbActionsView();
 });
 
 // src/app/ViewRouter.ts
@@ -9689,23 +10767,40 @@ function renderView(currentView, ctx) {
       return { view, statusText };
     }
     case "devices": {
-      const view = ComingSoonView(ctx.renderer, ctx.theme, "Devices", "Device and emulator management is coming soon.");
+      const viewModel = ctx.diContainer.get("DevicesViewModel");
+      const view = DevicesView(ctx.renderer, viewModel, ctx.theme, (action, data) => {
+        ctx.onNavigateThenRender("menu");
+      }, (select) => {
+        ctx.setSelectElement(select);
+      });
       return { view, statusText };
     }
     case "adb": {
-      const view = ComingSoonView(ctx.renderer, ctx.theme, "ADB Actions", "ADB shortcuts are coming soon.");
+      const viewModel = ctx.diContainer.get("AdbActionsViewModel");
+      const view = AdbActionsView(ctx.renderer, viewModel, ctx.theme, (action) => {
+        if (action.startsWith("adb-output:")) {
+          ctx.onGoBackThenRender();
+        } else {
+          ctx.onNavigateThenRender(action);
+        }
+      });
       return { view, statusText };
     }
     case "app-logs": {
-      const view = ComingSoonView(ctx.renderer, ctx.theme, "App Logs", "App-focused Logcat is coming soon.");
-      return { view, statusText };
+      const viewModel = ctx.diContainer.get("LogcatViewModel");
+      const ws = ctx.diContainer.get("WorkspaceService");
+      const projectName = ws.getCwd().split("/").pop() ?? "app";
+      const view = LogcatView(ctx.renderer, viewModel, { packageName: projectName }, ctx.theme, ctx.setStatusText, () => ctx.onGoBackThenRender());
+      return { view, statusText: "j/k: scroll \u2022 p: pause \u2022 c: clear \u2022 ESC: back" };
     }
     case "device-logs": {
-      const view = ComingSoonView(ctx.renderer, ctx.theme, "Device Logs", "Full device Logcat browsing is coming soon.");
-      return { view, statusText };
+      const viewModel = ctx.diContainer.get("LogcatViewModel");
+      const view = LogcatView(ctx.renderer, viewModel, {}, ctx.theme, ctx.setStatusText, () => ctx.onGoBackThenRender());
+      return { view, statusText: "j/k: scroll \u2022 p: pause \u2022 c: clear \u2022 ESC: back" };
     }
     case "screen-mirror": {
-      const view = ComingSoonView(ctx.renderer, ctx.theme, "Screen Mirror", "Device mirroring is coming soon.");
+      const viewModel = ctx.diContainer.get("MirrorViewModel");
+      const view = MirrorView(ctx.renderer, viewModel, ctx.theme);
       return { view, statusText };
     }
     default: {
@@ -9732,7 +10827,7 @@ var init_ViewRouter = __esm(() => {
 
 // src/index.ts
 var exports_src = {};
-import { createCliRenderer, Text as Text8, BoxRenderable as BoxRenderable14, TextAttributes as TextAttributes7 } from "@opentui/core";
+import { createCliRenderer, Text as Text10, BoxRenderable as BoxRenderable18, TextAttributes as TextAttributes9 } from "@opentui/core";
 import path11 from "path";
 async function rememberCurrentAndroidProject() {
   const ws = diContainer.get("WorkspaceService");
@@ -9763,11 +10858,11 @@ function setStatusLineText(content, theme) {
   statusLine.borderColor = borderColor;
   const resolvedFg = textColor === "transparent" ? "#E5E7EB" : textColor === statusLine.backgroundColor ? theme?.accentColor ?? theme?.primaryColor ?? "#FFFFFF" : textColor;
   statusLine.remove("status-line-text");
-  statusLine.add(Text8({
+  statusLine.add(Text10({
     id: "status-line-text",
     content,
     fg: resolvedFg,
-    attributes: TextAttributes7.BOLD,
+    attributes: TextAttributes9.BOLD,
     wrapMode: "word"
   }));
 }
@@ -9836,7 +10931,7 @@ var init_src = __esm(async () => {
   renderer = await createCliRenderer({ exitOnCtrlC: true });
   navigation = new NavigationManager;
   currentViewElements = [];
-  appShell = new BoxRenderable14(renderer, {
+  appShell = new BoxRenderable18(renderer, {
     id: "app-shell",
     flexDirection: "column",
     flexGrow: 1,
@@ -9845,7 +10940,7 @@ var init_src = __esm(async () => {
     alignItems: "stretch",
     justifyContent: "flex-start"
   });
-  contentHost = new BoxRenderable14(renderer, {
+  contentHost = new BoxRenderable18(renderer, {
     id: "content-host",
     flexDirection: "column",
     flexGrow: 1,
@@ -9855,7 +10950,7 @@ var init_src = __esm(async () => {
     paddingTop: 1,
     paddingBottom: 1
   });
-  statusLine = new BoxRenderable14(renderer, {
+  statusLine = new BoxRenderable18(renderer, {
     id: "status-line",
     height: 2,
     minHeight: 2,

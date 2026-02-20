@@ -14,8 +14,8 @@ export function MainMenuView(
     workspace: WorkspaceService
 ): BoxRenderable {
     const mode: RootMenuMode = workspace.isAndroidProject ? 'anvil' : 'forge';
-    const screenTitle = mode === 'anvil' ? 'The Anvil' : 'Forge';
-    const subtitle = mode === 'anvil' ? 'Project menu' : 'Main menu';
+    const screenTitle = 'Droidforge';
+    const subtitle = mode === 'anvil' ? 'In project' : 'No project';
 
     // Create menu container
     const menuContainer = new BoxRenderable(renderer, {
@@ -30,6 +30,10 @@ export function MainMenuView(
     const header = MainHeader(renderer, screenTitle, subtitle, theme);
     menuContainer.add(header);
 
+    // Spacer between title and panel
+    const spacer = new BoxRenderable(renderer, { id: 'menu-header-spacer', height: 1, flexShrink: 0 });
+    menuContainer.add(spacer);
+
     // Create select container
     const selectContainer = new BoxRenderable(renderer, menuPanelOptions("main-menu-panel", theme));
 
@@ -40,7 +44,7 @@ export function MainMenuView(
         options: menuOptions,
         autoFocus: true,
         theme,
-        itemSpacing: 0.5,
+        itemSpacing: 1,
         onSelect: (index, option) => {
             const view = viewModel.onMenuItemSelected(index, option);
             onNavigate(view);

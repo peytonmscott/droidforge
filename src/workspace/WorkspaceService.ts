@@ -7,13 +7,19 @@ import { ProjectDetection, type DetectionResult } from '../utilities/projectDete
  * Used by ViewModels, theme logic, and future LSP/tooling integration.
  */
 export class WorkspaceService {
-    private readonly _cwd: string;
-    private readonly _detection: DetectionResult;
+    private _cwd: string;
+    private _detection: DetectionResult;
+    private readonly _detector = new ProjectDetection();
 
     constructor(cwd: string) {
         this._cwd = path.resolve(cwd);
-        const detector = new ProjectDetection();
-        this._detection = detector.detectAndroidProject(this._cwd);
+        this._detection = this._detector.detectAndroidProject(this._cwd);
+    }
+
+    /** Update current workspace to a new cwd (e.g. after opening another project from the ledger). */
+    updateCwd(cwd: string): void {
+        this._cwd = path.resolve(cwd);
+        this._detection = this._detector.detectAndroidProject(this._cwd);
     }
 
     /** Current working directory (resolved). */

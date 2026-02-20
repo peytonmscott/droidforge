@@ -3,6 +3,7 @@ import type { CliRendererLike } from '../../utilities/rendererTypes';
 import { ActionsViewModel } from '../../viewmodels';
 import { ansiToStyledText, type AnsiPalette } from "../../utilities";
 import type { UiTheme } from "../theme";
+import { SPACING } from "../constants";
 
 function stripAnsi(text: string): string {
     return text
@@ -44,7 +45,8 @@ export function ActionOutputView(
         borderStyle: "single",
         borderColor: theme.borderColor ?? "#475569",
         backgroundColor: theme.panelBackgroundColor ?? "transparent",
-        margin: 1,
+        margin: SPACING.NORMAL,
+        padding: SPACING.NORMAL,
         onSizeChange: function() {
             viewModel.setOutputWindowSize(Math.max(1, this.height - 2));
         },

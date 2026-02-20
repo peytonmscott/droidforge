@@ -1,6 +1,7 @@
 import { BoxRenderable } from "@opentui/core";
 import type { CliRendererLike } from "../../utilities/rendererTypes";
 import type { UiTheme } from "../theme";
+import { LAYOUT } from "../constants";
 
 export interface PanelProps {
     id: string;
@@ -24,7 +25,7 @@ export function Panel(renderer: CliRendererLike, props: PanelProps): BoxRenderab
         borderStyle: "single",
         borderColor: props.theme?.borderColor ?? "#475569",
         backgroundColor: props.theme?.panelBackgroundColor ?? "transparent",
-        margin: props.margin || 1,
+        margin: props.margin ?? LAYOUT.PANEL_MARGIN,
         title: props.title,
         titleAlignment: props.titleAlignment || "left",
     });

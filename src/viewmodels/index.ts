@@ -6,3 +6,8 @@ export { SettingsViewModel } from './SettingsViewModel';
 export { AboutViewModel } from './AboutViewModel';
 export { ActionsViewModel } from './ActionsViewModel';
 export { GradleViewModel } from './GradleViewModel';
+export { DevicesViewModel } from './DevicesViewModel';
+export { MirrorViewModel } from './MirrorViewModel';
+export { LogcatViewModel } from './LogcatViewModel';
+export type { LogcatConfig, LogcatState, LogcatOutput } from './LogcatViewModel';
+export { AdbActionsViewModel } from './AdbActionsViewModel';
