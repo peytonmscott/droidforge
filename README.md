@@ -1,130 +1,52 @@
 # Droidforge
 
-Droidforge is a terminal UI (TUI) companion for Android development. Point it at an Android/Gradle project and it becomes a fast dashboard for common Gradle tasks, project switching, and more. It is designed as a **Neovim companion** and is being prepared to work alongside the official Kotlin LSP when it ships—Neovim handles editing and code intelligence; Droidforge handles build, run, devices, and logs.
+**A Kotlin Multiplatform Neovim distribution** — editing, JetBrains Kotlin LSP, Java/Swift LSP, menu-driven Gradle/run/device workflows, and readable copy-pasteable logs for web, Android, and iOS development.
 
-## Modes
+```bash
+git clone https://github.com/peytonmscott/droidforge.git
+ln -sf /path/to/droidforge/nvim ~/.config/nvim
+```
 
-Droidforge changes its root menu depending on where you launch it:
+Requires **Neovim 0.12+**. See [nvim/README.md](nvim/README.md) for toolchain setup.
 
-- **Forge mode**: general tools (project switching, settings, about).
-- **Anvil mode**: enabled when Droidforge detects an Android/Gradle project; focuses on running and browsing Gradle tasks.
+## Forge menu (daily driver)
+
+| Command | Action |
+|---|---|
+| `:Forge` or `<leader>f` | Main hub — Run, Gradle, Devices, Logs, Kotlin, Debug, Doctor |
+| `<leader>r` | Smart run (web / Android / iOS / JVM by buffer context) |
+| `:ForgeKotlin` | All Kotlin LSP actions via menu |
+| `:ForgeGradle` | Curated + all Gradle tasks |
+| `:ForgeLogs` | App or device logcat (copy-pasteable buffers) |
+| `:ForgeDevices` | Android emulators + iOS simulators |
+| `:ForgeDoctor` | Toolchain health check |
 
 ## Features
 
-**Available today**
+- **Menu-first UX** — Kotlin actions, Gradle tasks, run targets, and devices via Telescope pickers, not keybind sprawl
+- **KMP-aware run** — detects `androidMain`, `iosMain`, `wasmJs`, `jvmMain` from buffer path
+- **JetBrains kotlin-lsp** via [kotlin.nvim](https://github.com/AlexandrosAlexiou/kotlin.nvim)
+- **Java LSP** (`jdtls`) and **Swift LSP** (`sourcekit-lsp` on macOS)
+- **Readable logs** — pause, filter, yank line, copy all (`Y`, `c`, `p`, `f`)
+- **Migrated from dotfiles** — based on [peytonmscott/dotfiles](https://github.com/peytonmscott/dotfiles) with Telescope, Copilot, Sidekick, treesitter
 
-- **Project Ledger**: remembers Android projects you’ve opened and lets you quickly switch between them.
-- **Gradle task runner**: run common tasks (build/test/lint/install) and view output in-app.
-- **Task browser**: browse a curated shortlist or list **all** tasks from `./gradlew tasks --all`.
-- **Themes + preferences**: persisted across runs.
+## Docs
 
-**Coming soon (and contributions welcome!)**
+- [docs/KMP_NEOVIM.md](docs/KMP_NEOVIM.md) — overview and install
+- [docs/KMP_DEV_FLOWS.md](docs/KMP_DEV_FLOWS.md) — web / Android / iOS developer journey
+- [docs/MIGRATION_FROM_TUI.md](docs/MIGRATION_FROM_TUI.md) — TUI deprecation notes
 
-- Emulator / device management
-- ADB “quick actions”
-- App/device log views
-- Device mirroring
+## Deprecated: Bun TUI
 
-If any of these sound fun to build, open a PR or start a discussion — help is welcome.
+The OpenTUI companion in `src/` is deprecated. Use the Neovim distribution above. The TUI may still run via `bun run dev` but is no longer the focus of this project.
 
-## Install
-
-```bash
-bun add -g github:peytonmscott/droidforge
-```
-
-This installs a `droidforge` binary on your `PATH`.
-
-## Requirements
-
-- **Runtime**: Bun (the CLI entrypoint is `#!/usr/bin/env bun`).
-- **For Anvil mode (Gradle tooling)**:
-  - An Android project with the Gradle wrapper at the project root (`./gradlew`).
-  - A working Java/JDK + Android toolchain as required by your project’s Gradle tasks.
-
-## Usage
-
-Launch inside a project directory:
-
-```bash
-droidforge
-```
-
-Or pass a path (handy from anywhere):
-
-```bash
-droidforge /path/to/android/project
-```
-
-Notes:
-
-- If you launch from a subdirectory, Droidforge walks up to the Android project root when it can.
-- Some views require the Gradle wrapper (`./gradlew`) to be present at the project root.
-
-## Keybindings
-
-Droidforge is keyboard-first; the footer shows context-specific shortcuts.
-
-Common controls:
-
-- `↑`/`↓`: navigate
-- `ENTER`: select
-- `ESC`: back
-- `CTRL+C`: quit
-
-When viewing command output:
-
-- `j`/`k`: scroll
-- `c`: copy
-- `ESC`: cancel/back
-
-## Commands
-
-### `droidforge update`
-
-Updates your global installation to the latest GitHub version.
-
-```bash
-droidforge update
-```
-
-Flags:
-
-- `--check`: print the latest ref (tag) and exit
-- `--yes` / `-y`: skip the confirmation prompt
-
-**How it chooses what to install**
-
-1. Latest GitHub Release tag (preferred)
-2. Most recent git tag
-3. Default branch (`main`)
-
-## Config + persistence
-
-On first run, Droidforge creates:
-
-- `droidforge.json` (theme + preferences)
-- `droidforge.db` (projects database)
-
-Default locations:
-
-- macOS/Linux: `~/.config/droidforge` (or `$XDG_CONFIG_HOME/droidforge`)
-- Windows: `%APPDATA%\\droidforge`
-
-For tests/dev, override the config dir with `DROIDFORGE_CONFIG_DIR`.
-
-## Local development
+## Local development (legacy TUI)
 
 ```bash
 bun install
 bun run dev
 ```
 
-Useful scripts:
+## License
 
-```bash
-bun run test
-bun run build
-```
-
-Tip: during development, consider setting `DROIDFORGE_CONFIG_DIR` to a temp directory to avoid touching your real config.
+MIT
