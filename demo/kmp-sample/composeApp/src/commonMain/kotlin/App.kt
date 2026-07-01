@@ -1,0 +1,1 @@
+fun greet() = "Hello KMP"
