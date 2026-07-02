@@ -192,12 +192,16 @@ async function migrateDbFileIfNeeded(fromPath, toPath) {
 }
 async function readSettingsFromSqlite(dbPath) {
   return new Promise((resolve) => {
+    let openFailed = false;
     const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
       if (err) {
+        openFailed = true;
         resolve(null);
       }
     });
     db.get("SELECT * FROM settings WHERE id = 1", (err, row) => {
+      if (openFailed)
+        return;
       if (err || !row) {
         db.close();
         resolve(null);
