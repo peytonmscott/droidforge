@@ -278,7 +278,6 @@ export class ActionsViewModel {
             }
             return `\x1b[32m${line}\x1b[0m`;
         }
-        }
         if (trimmed.startsWith('BUILD SUCCESSFUL')) {
             return `\x1b[1;32m${line}\x1b[0m`;
         }

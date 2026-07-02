@@ -1,2 +1,4 @@
-// Re-export from OpenTUI core for consistency
-export type { SelectOption as MenuOption } from "@opentui/core";
+import type { SelectOption } from "@opentui/core";
+
+// OpenTUI's SelectOption plus a `disabled` marker used for headers/spacers.
+export type MenuOption = SelectOption & { disabled?: boolean };

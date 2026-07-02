@@ -15,14 +15,15 @@ const LOG_LEVELS = ['V', 'D', 'I', 'W', 'E', 'F'] as const;
 export function parseLogcatLine(line: string): LogcatLine {
     const threadtimeMatch = line.match(/^(\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEF])\s+([^:]+):\s*(.*)$/);
     if (threadtimeMatch) {
+        // Groups are guaranteed by the regex (none are optional).
         return {
             raw: line,
-            timestamp: threadtimeMatch[1],
-            pid: parseInt(threadtimeMatch[2], 10),
-            tid: parseInt(threadtimeMatch[3], 10),
+            timestamp: threadtimeMatch[1]!,
+            pid: parseInt(threadtimeMatch[2]!, 10),
+            tid: parseInt(threadtimeMatch[3]!, 10),
             level: threadtimeMatch[4] as LogLevel,
-            tag: threadtimeMatch[5].trim(),
-            message: threadtimeMatch[6],
+            tag: threadtimeMatch[5]!.trim(),
+            message: threadtimeMatch[6]!,
         };
     }
 
@@ -30,10 +31,10 @@ export function parseLogcatLine(line: string): LogcatLine {
     if (briefMatch) {
         return {
             raw: line,
-            pid: parseInt(briefMatch[3], 10),
+            pid: parseInt(briefMatch[3]!, 10),
             level: briefMatch[1] as LogLevel,
-            tag: briefMatch[2].trim(),
-            message: briefMatch[4],
+            tag: briefMatch[2]!.trim(),
+            message: briefMatch[4]!,
         };
     }
 

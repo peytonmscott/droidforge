@@ -133,12 +133,13 @@ function setStatusLineText(content: string, theme: UiTheme): void {
     const borderColor = theme?.footerBorderColor ?? theme?.borderColor ?? theme?.primaryColor ?? '#475569';
     const textColor = theme?.footerTextColor ?? theme?.textColor ?? '#E5E7EB';
 
-    statusLine.backgroundColor = background === 'transparent' ? '#111827' : background;
+    const resolvedBackground = background === 'transparent' ? '#111827' : background;
+    statusLine.backgroundColor = resolvedBackground;
     statusLine.borderColor = borderColor;
 
     const resolvedFg = textColor === 'transparent'
         ? '#E5E7EB'
-        : textColor === statusLine.backgroundColor
+        : textColor === resolvedBackground
             ? (theme?.accentColor ?? theme?.primaryColor ?? '#FFFFFF')
             : textColor;
 

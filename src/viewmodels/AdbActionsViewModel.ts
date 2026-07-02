@@ -78,21 +78,21 @@ export class AdbActionsViewModel {
 
     getMenuOptions(): MenuOption[] {
         if (this._loading) {
-            return [{ name: 'Loading...', value: '__loading__', disabled: true }];
+            return [{ name: 'Loading...', description: '', value: '__loading__', disabled: true }];
         }
 
         if (this._error) {
-            return [{ name: `Error: ${this._error}`, value: '__error__', disabled: true }];
+            return [{ name: `Error: ${this._error}`, description: '', value: '__error__', disabled: true }];
         }
 
         const options: MenuOption[] = [];
 
         if (this._devices.length === 0) {
-            return [{ name: 'No devices connected', value: '__empty__', disabled: true }];
+            return [{ name: 'No devices connected', description: '', value: '__empty__', disabled: true }];
         }
 
         if (this._devices.length > 1) {
-            options.push({ name: '── Select Device ──', value: '__header__', disabled: true });
+            options.push({ name: '── Select Device ──', description: '', value: '__header__', disabled: true });
             for (const device of this._devices) {
                 const selected = device.serial === this._selectedDevice ? '● ' : '○ ';
                 options.push({
@@ -101,11 +101,11 @@ export class AdbActionsViewModel {
                     value: `select-device:${device.serial}`,
                 });
             }
-            options.push({ name: '', value: '__spacer__', disabled: true });
+            options.push({ name: '', description: '', value: '__spacer__', disabled: true });
         }
 
         if (this._selectedDevice) {
-            options.push({ name: '── App Actions ──', value: '__header__', disabled: true });
+            options.push({ name: '── App Actions ──', description: '', value: '__header__', disabled: true });
             
             const projectPath = this._workspace.getCwd();
             const hasApk = projectPath;
@@ -131,7 +131,7 @@ export class AdbActionsViewModel {
                 value: 'force-stop',
             });
 
-            options.push({ name: '── Device Actions ──', value: '__header__', disabled: true });
+            options.push({ name: '── Device Actions ──', description: '', value: '__header__', disabled: true });
             options.push({
                 name: 'Take Screenshot',
                 description: 'Save screenshot to device',

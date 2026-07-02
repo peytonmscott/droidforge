@@ -73,17 +73,17 @@ export class DevicesViewModel {
 
     getMenuOptions(): MenuOption[] {
         if (this._loading) {
-            return [{ name: 'Loading...', value: '__loading__', disabled: true }];
+            return [{ name: 'Loading...', description: '', value: '__loading__', disabled: true }];
         }
 
         if (this._error) {
-            return [{ name: `Error: ${this._error}`, value: '__error__', disabled: true }];
+            return [{ name: `Error: ${this._error}`, description: '', value: '__error__', disabled: true }];
         }
 
         const options: MenuOption[] = [];
 
         if (this._devices.length > 0) {
-            options.push({ name: '── Connected Devices ──', value: '__header__', disabled: true });
+            options.push({ name: '── Connected Devices ──', description: '', value: '__header__', disabled: true });
             for (const device of this._devices) {
                 const statusIcon = device.status === 'device' ? '●' : '○';
                 const typeLabel = device.type === 'emulator' ? 'emulator' : 'device';
@@ -96,7 +96,7 @@ export class DevicesViewModel {
         }
 
         if (this._avds.length > 0) {
-            options.push({ name: '── Available Emulators ──', value: '__header__', disabled: true });
+            options.push({ name: '── Available Emulators ──', description: '', value: '__header__', disabled: true });
             for (const avd of this._avds) {
                 const statusIcon = avd.isRunning ? '●' : '○';
                 const statusText = avd.isRunning ? `Running (${avd.serial})` : 'Stopped';
@@ -109,10 +109,10 @@ export class DevicesViewModel {
         }
 
         if (options.length === 0) {
-            options.push({ name: 'No devices or emulators found', value: '__empty__', disabled: true });
+            options.push({ name: 'No devices or emulators found', description: '', value: '__empty__', disabled: true });
         }
 
-        options.push({ name: '── Actions ──', value: '__header__', disabled: true });
+        options.push({ name: '── Actions ──', description: '', value: '__header__', disabled: true });
         options.push({ name: 'Refresh', description: 'Reload device list', value: 'refresh' });
 
         return options;

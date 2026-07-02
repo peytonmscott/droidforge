@@ -72,7 +72,7 @@ export class MirrorViewModel {
 
     getMenuOptions(): any[] {
         if (this._loading) {
-            return [{ name: 'Loading...', value: '__loading__', disabled: true }];
+            return [{ name: 'Loading...', description: '', value: '__loading__', disabled: true }];
         }
 
         if (!this.hasScrcpy()) {
@@ -82,17 +82,17 @@ export class MirrorViewModel {
         }
 
         if (this._error) {
-            return [{ name: `Error: ${this._error}`, value: '__error__', disabled: true }];
+            return [{ name: `Error: ${this._error}`, description: '', value: '__error__', disabled: true }];
         }
 
         const options: any[] = [];
 
         if (this._devices.length === 0) {
-            return [{ name: 'No devices connected', value: '__empty__', disabled: true }];
+            return [{ name: 'No devices connected', description: '', value: '__empty__', disabled: true }];
         }
 
         if (this._devices.length > 1) {
-            options.push({ name: '── Select Device ──', value: '__header__', disabled: true });
+            options.push({ name: '── Select Device ──', description: '', value: '__header__', disabled: true });
             for (const device of this._devices) {
                 const selected = device.serial === this._selectedDevice ? '● ' : '○ ';
                 options.push({
@@ -101,7 +101,7 @@ export class MirrorViewModel {
                     value: `select-device:${device.serial}`,
                 });
             }
-            options.push({ name: '', value: '__spacer__', disabled: true });
+            options.push({ name: '', description: '', value: '__spacer__', disabled: true });
         }
 
         if (this._selectedDevice) {
@@ -113,8 +113,8 @@ export class MirrorViewModel {
         }
 
         if (this._message) {
-            options.push({ name: '', value: '__spacer__', disabled: true });
-            options.push({ name: this._message, value: '__message__', disabled: true });
+            options.push({ name: '', description: '', value: '__spacer__', disabled: true });
+            options.push({ name: this._message, description: '', value: '__message__', disabled: true });
         }
 
         return options;

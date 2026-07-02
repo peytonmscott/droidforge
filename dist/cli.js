@@ -2,13 +2,17 @@
 // @bun
 var __defProp = Object.defineProperty;
 var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
+var __returnValue = (v) => v;
+function __exportSetter(name, newValue) {
+  this[name] = __returnValue.bind(null, newValue);
+}
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, {
       get: all[name],
       enumerable: true,
       configurable: true,
-      set: (newValue) => all[name] = () => newValue
+      set: __exportSetter.bind(all, name)
     });
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
@@ -424,66 +428,9 @@ class ProjectRepository {
   }
 }
 
-// src/data/repositories/SettingsRepository.ts
-class SettingsRepository {
-  db;
-  constructor(db) {
-    this.db = db;
-  }
-  async getSettings() {
-    return new Promise((resolve, reject) => {
-      this.db.getDb().get("SELECT * FROM settings WHERE id = 1", (err, row) => {
-        if (err)
-          reject(err);
-        else if (row) {
-          resolve({
-            theme: JSON.parse(row.theme),
-            preferences: JSON.parse(row.preferences)
-          });
-        } else {
-          resolve({
-            theme: {
-              primaryColor: "#3b82f6",
-              secondaryColor: "#1e40af",
-              backgroundColor: "transparent",
-              textColor: "#E2E8F0",
-              borderColor: "#475569"
-            },
-            preferences: {
-              themeMode: "dark",
-              language: "English",
-              autoSave: true,
-              notifications: true
-            }
-          });
-        }
-      });
-    });
-  }
-  async saveSettings(settings) {
-    return new Promise((resolve, reject) => {
-      const sql = `
-                INSERT OR REPLACE INTO settings (id, theme, preferences)
-                VALUES (1, ?, ?)
-            `;
-      const params = [
-        JSON.stringify(settings.theme),
-        JSON.stringify(settings.preferences)
-      ];
-      this.db.getDb().run(sql, params, (err) => {
-        if (err)
-          reject(err);
-        else
-          resolve();
-      });
-    });
-  }
-}
-
 // src/data/repositories/index.ts
 var exports_repositories = {};
 __export(exports_repositories, {
-  SettingsRepository: () => SettingsRepository,
   ProjectRepository: () => ProjectRepository,
   Database: () => Database
 });
@@ -8136,6 +8083,9 @@ class ActionsViewModel {
       if (trimmed.endsWith("UP-TO-DATE")) {
         return `\x1B[36m${line}\x1B[0m`;
       }
+      if (trimmed.endsWith("FROM-CACHE")) {
+        return `\x1B[36m${line}\x1B[0m`;
+      }
       if (trimmed.endsWith("SKIPPED")) {
         return `\x1B[90m${line}\x1B[0m`;
       }
@@ -8476,14 +8426,14 @@ class DevicesViewModel {
   }
   getMenuOptions() {
     if (this._loading) {
-      return [{ name: "Loading...", value: "__loading__", disabled: true }];
+      return [{ name: "Loading...", description: "", value: "__loading__", disabled: true }];
     }
     if (this._error) {
-      return [{ name: `Error: ${this._error}`, value: "__error__", disabled: true }];
+      return [{ name: `Error: ${this._error}`, description: "", value: "__error__", disabled: true }];
     }
     const options = [];
     if (this._devices.length > 0) {
-      options.push({ name: "\u2500\u2500 Connected Devices \u2500\u2500", value: "__header__", disabled: true });
+      options.push({ name: "\u2500\u2500 Connected Devices \u2500\u2500", description: "", value: "__header__", disabled: true });
       for (const device of this._devices) {
         const statusIcon = device.status === "device" ? "\u25CF" : "\u25CB";
         const typeLabel = device.type === "emulator" ? "emulator" : "device";
@@ -8495,7 +8445,7 @@ class DevicesViewModel {
       }
     }
     if (this._avds.length > 0) {
-      options.push({ name: "\u2500\u2500 Available Emulators \u2500\u2500", value: "__header__", disabled: true });
+      options.push({ name: "\u2500\u2500 Available Emulators \u2500\u2500", description: "", value: "__header__", disabled: true });
       for (const avd of this._avds) {
         const statusIcon = avd.isRunning ? "\u25CF" : "\u25CB";
         const statusText = avd.isRunning ? `Running (${avd.serial})` : "Stopped";
@@ -8507,9 +8457,9 @@ class DevicesViewModel {
       }
     }
     if (options.length === 0) {
-      options.push({ name: "No devices or emulators found", value: "__empty__", disabled: true });
+      options.push({ name: "No devices or emulators found", description: "", value: "__empty__", disabled: true });
     }
-    options.push({ name: "\u2500\u2500 Actions \u2500\u2500", value: "__header__", disabled: true });
+    options.push({ name: "\u2500\u2500 Actions \u2500\u2500", description: "", value: "__header__", disabled: true });
     options.push({ name: "Refresh", description: "Reload device list", value: "refresh" });
     return options;
   }
@@ -8595,7 +8545,7 @@ class MirrorViewModel {
   }
   getMenuOptions() {
     if (this._loading) {
-      return [{ name: "Loading...", value: "__loading__", disabled: true }];
+      return [{ name: "Loading...", description: "", value: "__loading__", disabled: true }];
     }
     if (!this.hasScrcpy()) {
       return [
@@ -8603,14 +8553,14 @@ class MirrorViewModel {
       ];
     }
     if (this._error) {
-      return [{ name: `Error: ${this._error}`, value: "__error__", disabled: true }];
+      return [{ name: `Error: ${this._error}`, description: "", value: "__error__", disabled: true }];
     }
     const options = [];
     if (this._devices.length === 0) {
-      return [{ name: "No devices connected", value: "__empty__", disabled: true }];
+      return [{ name: "No devices connected", description: "", value: "__empty__", disabled: true }];
     }
     if (this._devices.length > 1) {
-      options.push({ name: "\u2500\u2500 Select Device \u2500\u2500", value: "__header__", disabled: true });
+      options.push({ name: "\u2500\u2500 Select Device \u2500\u2500", description: "", value: "__header__", disabled: true });
       for (const device of this._devices) {
         const selected = device.serial === this._selectedDevice ? "\u25CF " : "\u25CB ";
         options.push({
@@ -8619,7 +8569,7 @@ class MirrorViewModel {
           value: `select-device:${device.serial}`
         });
       }
-      options.push({ name: "", value: "__spacer__", disabled: true });
+      options.push({ name: "", description: "", value: "__spacer__", disabled: true });
     }
     if (this._selectedDevice) {
       options.push({
@@ -8629,8 +8579,8 @@ class MirrorViewModel {
       });
     }
     if (this._message) {
-      options.push({ name: "", value: "__spacer__", disabled: true });
-      options.push({ name: this._message, value: "__message__", disabled: true });
+      options.push({ name: "", description: "", value: "__spacer__", disabled: true });
+      options.push({ name: this._message, description: "", value: "__message__", disabled: true });
     }
     return options;
   }
@@ -8907,17 +8857,17 @@ class AdbActionsViewModel {
   }
   getMenuOptions() {
     if (this._loading) {
-      return [{ name: "Loading...", value: "__loading__", disabled: true }];
+      return [{ name: "Loading...", description: "", value: "__loading__", disabled: true }];
     }
     if (this._error) {
-      return [{ name: `Error: ${this._error}`, value: "__error__", disabled: true }];
+      return [{ name: `Error: ${this._error}`, description: "", value: "__error__", disabled: true }];
     }
     const options = [];
     if (this._devices.length === 0) {
-      return [{ name: "No devices connected", value: "__empty__", disabled: true }];
+      return [{ name: "No devices connected", description: "", value: "__empty__", disabled: true }];
     }
     if (this._devices.length > 1) {
-      options.push({ name: "\u2500\u2500 Select Device \u2500\u2500", value: "__header__", disabled: true });
+      options.push({ name: "\u2500\u2500 Select Device \u2500\u2500", description: "", value: "__header__", disabled: true });
       for (const device of this._devices) {
         const selected = device.serial === this._selectedDevice ? "\u25CF " : "\u25CB ";
         options.push({
@@ -8926,10 +8876,10 @@ class AdbActionsViewModel {
           value: `select-device:${device.serial}`
         });
       }
-      options.push({ name: "", value: "__spacer__", disabled: true });
+      options.push({ name: "", description: "", value: "__spacer__", disabled: true });
     }
     if (this._selectedDevice) {
-      options.push({ name: "\u2500\u2500 App Actions \u2500\u2500", value: "__header__", disabled: true });
+      options.push({ name: "\u2500\u2500 App Actions \u2500\u2500", description: "", value: "__header__", disabled: true });
       const projectPath = this._workspace.getCwd();
       const hasApk = projectPath;
       options.push({
@@ -8952,7 +8902,7 @@ class AdbActionsViewModel {
         description: "Kill a running app",
         value: "force-stop"
       });
-      options.push({ name: "\u2500\u2500 Device Actions \u2500\u2500", value: "__header__", disabled: true });
+      options.push({ name: "\u2500\u2500 Device Actions \u2500\u2500", description: "", value: "__header__", disabled: true });
       options.push({
         name: "Take Screenshot",
         description: "Save screenshot to device",
@@ -9803,11 +9753,7 @@ function applyCompactMenuLayout(options) {
   if (options.select) {
     const compactSpacing = 0.5;
     const wideSpacing = 1;
-    if (typeof options.select.itemSpacing !== "undefined") {
-      options.select.itemSpacing = compact ? compactSpacing : wideSpacing;
-    } else {
-      options.select.itemSpacing = compact ? compactSpacing : wideSpacing;
-    }
+    options.select.itemSpacing = compact ? compactSpacing : wideSpacing;
   }
 }
 function wireCompactMenuLayout(panel, select) {
@@ -10854,9 +10800,10 @@ function setStatusLineText(content, theme) {
   const background = theme?.footerBackgroundColor ?? theme?.panelBackgroundColor ?? theme?.backgroundColor ?? "#111827";
   const borderColor = theme?.footerBorderColor ?? theme?.borderColor ?? theme?.primaryColor ?? "#475569";
   const textColor = theme?.footerTextColor ?? theme?.textColor ?? "#E5E7EB";
-  statusLine.backgroundColor = background === "transparent" ? "#111827" : background;
+  const resolvedBackground = background === "transparent" ? "#111827" : background;
+  statusLine.backgroundColor = resolvedBackground;
   statusLine.borderColor = borderColor;
-  const resolvedFg = textColor === "transparent" ? "#E5E7EB" : textColor === statusLine.backgroundColor ? theme?.accentColor ?? theme?.primaryColor ?? "#FFFFFF" : textColor;
+  const resolvedFg = textColor === "transparent" ? "#E5E7EB" : textColor === resolvedBackground ? theme?.accentColor ?? theme?.primaryColor ?? "#FFFFFF" : textColor;
   statusLine.remove("status-line-text");
   statusLine.add(Text10({
     id: "status-line-text",
