@@ -156,6 +156,7 @@ export function LogcatView(
 
     (container as any).__dispose = () => {
         dropLive();
+        renderer.keyInput.off('keypress', keyHandler);
         viewModel.stopStream();
         viewModel.setOutputUpdateCallback(() => undefined);
     };

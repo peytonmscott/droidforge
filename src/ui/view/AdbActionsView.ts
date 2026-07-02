@@ -35,10 +35,8 @@ export function AdbActionsView(
         itemSpacing: 1,
         onSelect: async (_index, option) => {
             const value = typeof option.value === 'string' ? option.value : '';
-            const result = await viewModel.handleMenuSelection(value);
-            if (result.action === 'navigate' && result.command && onNavigate) {
-                onNavigate(`adb-output:${result.command}`);
-            }
+            // Actions run in place; results surface through the menu itself.
+            await viewModel.handleMenuSelection(value);
         },
     });
 

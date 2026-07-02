@@ -19,14 +19,22 @@ export class EmulatorService {
         const devices = await this._adb.listDevices();
         const runningEmulators = devices.filter(d => d.type === 'emulator');
 
+        // The AVD name isn't part of `adb devices -l` output; ask each running
+        // emulator which AVD it is booting.
+        const serialsByAvd = new Map<string, string>();
+        await Promise.all(
+            runningEmulators.map(async (emulator) => {
+                const avdName = await this._adb.getEmulatorAvdName(emulator.serial);
+                if (avdName) serialsByAvd.set(avdName, emulator.serial);
+            }),
+        );
+
         return names.map(name => {
-            const running = runningEmulators.find(e => 
-                e.model?.includes(name) || e.serial.includes(name.toLowerCase().replace(/_/g, ''))
-            );
+            const serial = serialsByAvd.get(name);
             return {
                 name,
-                isRunning: !!running,
-                serial: running?.serial,
+                isRunning: serial !== undefined,
+                serial,
             };
         });
     }

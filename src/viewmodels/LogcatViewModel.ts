@@ -51,11 +51,24 @@ export class LogcatViewModel {
     async startStream(): Promise<void> {
         if (this._state === 'running') return;
 
-        const { deviceId, packageName, logLevel = 'V' } = this._config;
+        this._output = { lines: [], scrollOffset: 0, exitCode: null };
+
+        const { packageName, logLevel = 'V' } = this._config;
+        let { deviceId } = this._config;
+
         if (!deviceId) {
-            this._state = 'error';
-            this._onOutputUpdate?.();
-            return;
+            // No device configured: pick the first connected one.
+            if (!this._adb.isAvailable()) {
+                this.failWithMessage('ADB not found. Install Android SDK platform-tools.');
+                return;
+            }
+            const devices = await this._adb.listDevices();
+            deviceId = devices.find(d => d.status === 'device')?.serial;
+            if (!deviceId) {
+                this.failWithMessage('No connected devices. Start an emulator or plug in a device.');
+                return;
+            }
+            this._config = { ...this._config, deviceId };
         }
 
         const args: string[] = ['-v', 'threadtime'];
@@ -64,13 +77,14 @@ export class LogcatViewModel {
             const pid = await this._adb.getPackagePid(deviceId, packageName);
             if (pid) {
                 args.push('--pid', String(pid));
+            } else {
+                this.addLine(`--- ${packageName} is not running; showing full device logcat ---`);
             }
         }
 
         args.push(`*:${logLevel}`);
 
         this._state = 'running';
-        this._output = { lines: [], scrollOffset: 0, exitCode: null };
         this._onOutputUpdate?.();
 
         this._currentProcess = this._adb.spawnLogcat(deviceId, args);
@@ -101,7 +115,17 @@ export class LogcatViewModel {
         }
     }
 
+    private failWithMessage(message: string): void {
+        this._state = 'error';
+        this.addLine(`--- ${message} ---`);
+        this._onOutputUpdate?.();
+    }
+
     private addLine(rawLine: string): void {
+        // Follow the tail only if the user hasn't scrolled up.
+        const wasAtBottom =
+            this._output.scrollOffset >= Math.max(0, this._output.lines.length - this._outputWindowSize);
+
         const parsed = parseLogcatLine(rawLine);
         this._output.lines.push(parsed);
 
@@ -111,7 +135,9 @@ export class LogcatViewModel {
             this._output.scrollOffset = Math.max(0, this._output.scrollOffset - excess);
         }
 
-        this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+        if (wasAtBottom) {
+            this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+        }
     }
 
     pauseStream(): void {

@@ -107,13 +107,15 @@ function M.pick(prompt, items, on_select)
             }),
             sorter = require("telescope.config").values.generic_sorter({}),
             attach_mappings = function(_, map)
-                map("i", "<CR>", function(prompt_bufnr)
+                local function confirm(prompt_bufnr)
                     local selection = require("telescope.actions.state").get_selected_entry(prompt_bufnr)
                     require("telescope.actions").close(prompt_bufnr)
                     if selection and on_select then
                         on_select(selection.value)
                     end
-                end)
+                end
+                map("i", "<CR>", confirm)
+                map("n", "<CR>", confirm)
                 return true
             end,
         }):find()

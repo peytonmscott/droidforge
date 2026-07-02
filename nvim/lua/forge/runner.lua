@@ -83,15 +83,12 @@ local function deploy_android(root, serial, apk)
 end
 
 local function run_android_install(root)
-    gradle.discover_tasks(root, function(tasks)
-        local task = gradle.curated_options(root, tasks or {})
-        local install_task = ":app:installDebug"
-        for _, item in ipairs(task) do
-            if item.task and item.task:find("installDebug") then
-                install_task = item.task
-                break
-            end
+    gradle.discover_tasks(root, function(tasks, err)
+        if not tasks then
+            vim.notify(err or "Could not load Gradle tasks", vim.log.levels.ERROR)
+            return
         end
+        local install_task = gradle.resolve_task("installDebug", tasks) or ":app:installDebug"
         logs.run_with_output("Forge Run — Android", "./gradlew " .. install_task .. " --console=plain", root, function(code)
             if code ~= 0 then
                 return
@@ -110,16 +107,26 @@ local function run_android_install(root)
 end
 
 local function run_android_assemble(root)
-    logs.run_with_output("Forge Run — Android", "./gradlew assembleDebug --console=plain", root, function(code)
-        if code ~= 0 then
-            return
-        end
-        android.with_device(function(serial)
-            local apk = find_debug_apk(root)
-            if apk then
-                deploy_android(root, serial, apk)
+    gradle.discover_tasks(root, function(tasks)
+        local assemble_task = (tasks and gradle.resolve_task("assembleDebug", tasks)) or "assembleDebug"
+        logs.run_with_output("Forge Run — Android", "./gradlew " .. assemble_task .. " --console=plain", root, function(code)
+            if code ~= 0 then
+                return
             end
+            android.with_device(function(serial)
+                local apk = find_debug_apk(root)
+                if apk then
+                    deploy_android(root, serial, apk)
+                end
+            end)
         end)
+    end)
+end
+
+local function run_jvm(root)
+    gradle.discover_tasks(root, function(tasks)
+        local run_task = (tasks and gradle.resolve_task("run", tasks)) or "run"
+        logs.run_with_output("Forge Run — JVM", "./gradlew " .. run_task .. " --console=plain", root)
     end)
 end
 
@@ -198,7 +205,7 @@ function M.run_target(target)
         return
     end
     if target == "jvm" or (not target and info.source_set == "jvm") then
-        logs.run_with_output("Forge Run — JVM", "./gradlew run --console=plain", root)
+        run_jvm(root)
         return
     end
     M.smart_run()
@@ -252,7 +259,7 @@ function M.smart_run()
         return
     end
     if info.source_set == "jvm" then
-        logs.run_with_output("Forge Run — JVM", "./gradlew run --console=plain", root)
+        run_jvm(root)
         return
     end
 

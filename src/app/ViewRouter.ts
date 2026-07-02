@@ -29,6 +29,7 @@ import {
     AdbActionsView,
 } from '../ui/view';
 import type { WorkspaceService } from '../workspace';
+import { getAndroidApplicationId } from '../utilities';
 
 export interface ViewRouterContext {
     renderer: CliRendererLike;
@@ -214,24 +215,18 @@ export function renderView(currentView: string, ctx: ViewRouterContext): ViewRou
         }
         case 'adb': {
             const viewModel = ctx.diContainer.get<AdbActionsViewModel>('AdbActionsViewModel');
-            const view = AdbActionsView(ctx.renderer, viewModel, ctx.theme, (action: string) => {
-                if (action.startsWith('adb-output:')) {
-                    // For now, just go back - could show command output
-                    ctx.onGoBackThenRender();
-                } else {
-                    ctx.onNavigateThenRender(action);
-                }
-            });
+            const view = AdbActionsView(ctx.renderer, viewModel, ctx.theme);
             return { view, statusText };
         }
         case 'app-logs': {
             const viewModel = ctx.diContainer.get<LogcatViewModel>('LogcatViewModel');
             const ws = ctx.diContainer.get<WorkspaceService>('WorkspaceService');
-            const projectName = ws.getCwd().split('/').pop() ?? 'app';
+            // Filter by the real applicationId; without one, fall back to full device logs.
+            const applicationId = getAndroidApplicationId(ws.getCwd());
             const view = LogcatView(
                 ctx.renderer,
                 viewModel,
-                { packageName: projectName },
+                applicationId ? { packageName: applicationId } : {},
                 ctx.theme,
                 ctx.setStatusText,
                 () => ctx.onGoBackThenRender()

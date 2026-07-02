@@ -2,22 +2,11 @@ local util = require("forge.util")
 
 local M = {}
 
-local active_jobs = {}
 local log_buffers = {}
-
-local LEVEL_HIGHLIGHT = {
-    V = "Comment",
-    D = "DiagnosticInfo",
-    I = "DiagnosticOk",
-    W = "DiagnosticWarn",
-    E = "DiagnosticError",
-    F = "DiagnosticError",
-    ["?"] = "Normal",
-}
 
 function M.parse_logcat_line(line)
     local ts, pid, tid, level, tag, message = line:match(
-        "^(%d%d%-%d%d %d%d:%d%d:%d%d%.%d%d)%s+(%d+)%s+(%d+)%s+([VDIWEF])%s+([^:]+):%s*(.*)$"
+        "^(%d%d%-%d%d %d%d:%d%d:%d%d%.%d+)%s+(%d+)%s+(%d+)%s+([VDIWEF])%s+([^:]+):%s*(.*)$"
     )
     if ts then
         return {
@@ -53,13 +42,14 @@ local function setup_log_buffer_keymaps(bufnr, state)
     map("n", "j", "j", "Next line")
     map("n", "k", "k", "Previous line")
     map("n", "q", function()
-        if state.job and not state.paused then
-            vim.fn.jobstop(state.job)
-        end
         vim.api.nvim_buf_delete(bufnr, { force = true })
     end, "Close log")
     map("n", "p", function()
         state.paused = not state.paused
+        if not state.paused then
+            -- Lines kept accumulating while paused; catch the buffer up.
+            M._render(bufnr, state)
+        end
         vim.notify(state.paused and "Log paused" or "Log resumed", vim.log.levels.INFO)
     end, "Pause/resume")
     map("n", "x", function()
@@ -95,23 +85,38 @@ local function setup_log_buffer_keymaps(bufnr, state)
     end, "Restart stream")
 end
 
-function M._render(bufnr, state)
-    local lines = {}
-    for _, entry in ipairs(state.lines) do
-        if not state.filter or entry.raw:lower():find(state.filter, 1, true) then
-            table.insert(lines, entry.raw)
-        end
+local function follow_tail(bufnr, state)
+    if not state.follow then
+        return
     end
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    if state.follow then
-        if #lines > 0 then
-            vim.api.nvim_win_set_cursor(0, { #lines, 0 })
-        end
+    local winid = vim.fn.bufwinid(bufnr)
+    if winid == -1 then
+        return
+    end
+    local line_count = vim.api.nvim_buf_line_count(bufnr)
+    if line_count > 0 then
+        vim.api.nvim_win_set_cursor(winid, { line_count, 0 })
     end
 end
 
+function M._render(bufnr, state)
+    vim.schedule(function()
+        if not vim.api.nvim_buf_is_valid(bufnr) then
+            return
+        end
+        local lines = {}
+        for _, entry in ipairs(state.lines) do
+            if not state.filter or entry.raw:lower():find(state.filter, 1, true) then
+                table.insert(lines, entry.raw)
+            end
+        end
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+        follow_tail(bufnr, state)
+    end)
+end
+
 function M._append(bufnr, state, raw_line)
-    if state.paused or raw_line == "" then
+    if raw_line == "" then
         return
     end
     local parsed = M.parse_logcat_line(raw_line)
@@ -119,12 +124,20 @@ function M._append(bufnr, state, raw_line)
     if #state.lines > (state.max_lines or 5000) then
         table.remove(state.lines, 1)
     end
+    -- While paused, keep accumulating so nothing is lost; the resume keymap
+    -- re-renders the full buffer.
+    if state.paused then
+        return
+    end
     if not state.filter or parsed.raw:lower():find(state.filter, 1, true) then
-        local line_count = vim.api.nvim_buf_line_count(bufnr)
-        vim.api.nvim_buf_set_lines(bufnr, line_count, line_count, false, { parsed.raw })
-        if state.follow then
-            vim.api.nvim_win_set_cursor(0, { line_count + 1, 0 })
-        end
+        vim.schedule(function()
+            if not vim.api.nvim_buf_is_valid(bufnr) then
+                return
+            end
+            local line_count = vim.api.nvim_buf_line_count(bufnr)
+            vim.api.nvim_buf_set_lines(bufnr, line_count, line_count, false, { parsed.raw })
+            follow_tail(bufnr, state)
+        end)
     end
 end
 
@@ -154,41 +167,69 @@ function M.open_buffer(opts)
     }
     log_buffers[bufnr] = state
     setup_log_buffer_keymaps(bufnr, state)
+
+    -- Stop the underlying job however the buffer goes away (:q, :bd, q, ...).
+    vim.api.nvim_create_autocmd("BufWipeout", {
+        buffer = bufnr,
+        once = true,
+        callback = function()
+            if state.job then
+                pcall(vim.fn.jobstop, state.job)
+                state.job = nil
+            end
+            log_buffers[bufnr] = nil
+        end,
+    })
+
     return bufnr, state
+end
+
+-- jobstart callbacks deliver chunks split on "\n" already: each `data` list
+-- item is a complete line except that the first item continues the previous
+-- callback's last item. Track the partial line across callbacks.
+local function line_appender(bufnr, state)
+    local partial = ""
+    return function(data)
+        if not data then
+            return
+        end
+        for i, chunk in ipairs(data) do
+            chunk = chunk:gsub("\r$", "")
+            if i == 1 then
+                partial = partial .. chunk
+            else
+                M._append(bufnr, state, partial)
+                partial = chunk
+            end
+        end
+    end, function()
+        if partial ~= "" then
+            M._append(bufnr, state, partial)
+            partial = ""
+        end
+    end
 end
 
 function M.stream_command(bufnr, state, argv, cwd)
     if state.job then
         vim.fn.jobstop(state.job)
     end
-    local pending = ""
+    local append_stdout, flush_stdout = line_appender(bufnr, state)
+    local append_stderr, flush_stderr = line_appender(bufnr, state)
     state.job = vim.fn.jobstart(argv, {
         cwd = cwd,
         stdout_buffered = false,
         stderr_buffered = false,
         on_stdout = function(_, data)
-            if not data then
-                return
-            end
-            for _, chunk in ipairs(data) do
-                pending = pending .. chunk
-                while true do
-                    local nl = pending:find("\n", 1, true)
-                    if not nl then
-                        break
-                    end
-                    local line = pending:sub(1, nl - 1)
-                    pending = pending:sub(nl + 1)
-                    M._append(bufnr, state, line)
-                end
-            end
+            append_stdout(data)
         end,
         on_stderr = function(_, data)
-            if data then
-                for _, chunk in ipairs(data) do
-                    M._append(bufnr, state, chunk)
-                end
-            end
+            append_stderr(data)
+        end,
+        on_exit = function()
+            state.job = nil
+            flush_stdout()
+            flush_stderr()
         end,
     })
 end
@@ -212,32 +253,32 @@ function M.run_with_output(title, command, cwd, on_complete)
     local flag = vim.o.shellcmdflag or "-c"
 
     state.restart = function()
+        if vim.api.nvim_buf_is_valid(bufnr) then
+            vim.api.nvim_buf_delete(bufnr, { force = true })
+        end
         M.run_with_output(title, command, cwd, on_complete)
     end
+
+    local append_stdout, flush_stdout = line_appender(bufnr, state)
+    local append_stderr, flush_stderr = line_appender(bufnr, state)
 
     state.job = vim.fn.jobstart({ shell, flag, command }, {
         cwd = cwd,
         on_stdout = function(_, data)
-            if not data then
-                return
-            end
-            for _, chunk in ipairs(data) do
-                M._append(bufnr, state, chunk)
-            end
+            append_stdout(data)
         end,
         on_stderr = function(_, data)
-            if not data then
-                return
-            end
-            for _, chunk in ipairs(data) do
-                M._append(bufnr, state, chunk)
-            end
+            append_stderr(data)
         end,
         on_exit = function(_, code)
-            M._append(bufnr, state, "")
+            state.job = nil
+            flush_stdout()
+            flush_stderr()
             M._append(bufnr, state, "[forge] exit " .. tostring(code))
             if on_complete then
-                on_complete(code, bufnr)
+                vim.schedule(function()
+                    on_complete(code, bufnr)
+                end)
             end
         end,
     })
@@ -256,25 +297,51 @@ function M.open_logcat(opts)
     local package_name = opts.package or project.application_id
     local title = package_name and ("Forge Logcat — " .. package_name) or "Forge Logcat — device"
 
-    local function start_stream()
+    local function start_stream(pid)
         local bufnr, state = M.open_buffer({ title = title, height = opts.height or 20, follow = true })
         local args = { adb }
         if opts.device then
             vim.list_extend(args, { "-s", opts.device })
         end
         vim.list_extend(args, { "logcat", "-v", "threadtime" })
-        if package_name then
-            table.insert(args, "*:S")
-            table.insert(args, package_name .. ":V")
-        else
+        if pid then
+            table.insert(args, "--pid=" .. pid)
+        elseif not package_name then
             table.insert(args, "*:I")
         end
-        state.restart = start_stream
+        state.restart = function()
+            if vim.api.nvim_buf_is_valid(bufnr) then
+                vim.api.nvim_buf_delete(bufnr, { force = true })
+            end
+            M.open_logcat(opts)
+        end
         M.stream_command(bufnr, state, args, nil)
         return bufnr
     end
 
-    return start_stream()
+    if package_name then
+        -- App logs must filter by PID: the applicationId is not a logcat tag.
+        local pidof = { adb }
+        if opts.device then
+            vim.list_extend(pidof, { "-s", opts.device })
+        end
+        vim.list_extend(pidof, { "shell", "pidof", "-s", package_name })
+        util.system_text(pidof, {}, function(result)
+            local pid = util.trim(result.stdout or ""):match("^(%d+)")
+            if pid then
+                start_stream(pid)
+            else
+                vim.notify(
+                    "Forge: " .. package_name .. " is not running; showing full device logcat.",
+                    vim.log.levels.WARN
+                )
+                start_stream(nil)
+            end
+        end)
+        return
+    end
+
+    return start_stream(nil)
 end
 
 function M.open_device_logcat(opts)

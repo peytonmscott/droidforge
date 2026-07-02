@@ -13,6 +13,24 @@ function stripAnsi(text: string): string {
         .replace(/\u001b\][^\u0007]*(\u0007|\u001b\\)/g, '');
 }
 
+function copyToClipboard(text: string): boolean {
+    const candidates: string[][] =
+        process.platform === 'darwin' ? [['pbcopy']]
+        : process.platform === 'win32' ? [['clip']]
+        : [['wl-copy'], ['xclip', '-selection', 'clipboard'], ['xsel', '--clipboard', '--input']];
+
+    for (const cmd of candidates) {
+        if (!Bun.which(cmd[0]!)) continue;
+        try {
+            Bun.spawn(cmd, { stdin: new Response(text).body! });
+            return true;
+        } catch {
+            // try the next tool
+        }
+    }
+    return false;
+}
+
 export function ActionOutputView(
     renderer: CliRendererLike,
     viewModel: ActionsViewModel,
@@ -169,15 +187,12 @@ export function ActionOutputView(
             case 'c':
                 if (viewModel.state === 'completed' || viewModel.state === 'error') {
                     const text = stripAnsi(viewModel.getOutputText());
-                    try {
-                        Bun.spawn(['pbcopy'], {
-                            stdin: new Response(text).body!
-                        });
+                    if (copyToClipboard(text)) {
                         setStatusText?.('📋 Copied to clipboard!');
-                        setTimeout(updateOutput, 1500);
-                    } catch {
-                        // Ignore clipboard errors
+                    } else {
+                        setStatusText?.('⚠ No clipboard tool found (pbcopy/wl-copy/xclip/xsel)');
                     }
+                    setTimeout(updateOutput, 1500);
                 }
                 break;
             case 'escape':
@@ -203,6 +218,9 @@ export function ActionOutputView(
 
         // Prevent updates from touching destroyed nodes.
         viewModel.setOutputUpdateCallback(() => undefined);
+
+        // Don't leave ./gradlew running with no UI attached.
+        viewModel.cancelTask();
     };
 
     ensureLive();

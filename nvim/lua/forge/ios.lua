@@ -113,29 +113,33 @@ function M.run_ios(root, scheme)
             local booted = vim.tbl_filter(function(s)
                 return s.state == "Booted"
             end, sims)
-            local function build_and_run()
+            local function build_and_run(sim_id)
                 local args = { "xcodebuild" }
                 if info.workspace then
-                    vim.list_extend(args, { "-workspace", info.workspace })
+                    vim.list_extend(args, { "-workspace", vim.fn.shellescape(info.workspace) })
                 else
-                    vim.list_extend(args, { "-project", info.project })
+                    vim.list_extend(args, { "-project", vim.fn.shellescape(info.project) })
                 end
+                -- Target the actual simulator instead of assuming a model name.
+                local destination = sim_id and ("id=" .. sim_id) or "generic/platform=iOS Simulator"
                 vim.list_extend(args, {
                     "-scheme",
-                    chosen,
+                    vim.fn.shellescape(chosen),
                     "-destination",
-                    "platform=iOS Simulator,name=iPhone 16",
+                    vim.fn.shellescape(destination),
                     "build",
                 })
                 local cmd = table.concat(args, " ")
                 logs.run_with_output("Forge iOS — " .. chosen, cmd, ios_dir)
             end
             if #booted > 0 then
-                build_and_run()
+                build_and_run(booted[1].id)
             elseif #sims > 0 then
-                M.boot_simulator(sims[1].id, build_and_run)
+                M.boot_simulator(sims[1].id, function()
+                    build_and_run(sims[1].id)
+                end)
             else
-                build_and_run()
+                build_and_run(nil)
             end
         end)
     end)

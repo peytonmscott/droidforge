@@ -31,6 +31,10 @@ function M.list_devices(callback)
         return
     end
     util.system_text({ adb, "devices", "-l" }, {}, function(result)
+        if result.code ~= 0 then
+            callback({}, result.stderr ~= "" and result.stderr or "adb devices failed")
+            return
+        end
         local devices = {}
         for line in (result.stdout or ""):gmatch("[^\r\n]+") do
             local serial, state = line:match("^(%S+)%s+(%S+)")
@@ -93,7 +97,11 @@ function M.wait_for_emulator(callback, attempts)
 end
 
 function M.with_device(callback)
-    M.list_devices(function(devices)
+    M.list_devices(function(devices, err)
+        if err then
+            vim.notify(err, vim.log.levels.ERROR)
+            return
+        end
         local ready = vim.tbl_filter(function(d)
             return d.state == "device"
         end, devices)

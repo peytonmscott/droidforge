@@ -12,19 +12,24 @@ local WEB_TASKS = {
 
 function M.find_web_task(root, tasks)
     local available = {}
+    local names = {}
     for _, task in ipairs(tasks or {}) do
         available[task.name] = true
         available[task.name:gsub("^:", "")] = true
+        table.insert(names, task.name)
     end
+    table.sort(names)
     for _, base in ipairs(WEB_TASKS) do
         for _, candidate in ipairs({ ":composeApp:" .. base, ":app:" .. base, ":" .. base, base }) do
             if available[candidate] or available[candidate:gsub("^:", "")] then
                 return candidate:match("^:") and candidate or (":" .. candidate)
             end
         end
-        for name, _ in pairs(available) do
-            if name:find(base, 1, true) then
-                return name:match("^:") and name or (":" .. name:gsub("^:", ""))
+        -- Deterministic module-qualified fallback (exact task-name suffix).
+        local suffix = ":" .. base
+        for _, name in ipairs(names) do
+            if name == base or name:sub(-#suffix) == suffix then
+                return name:match("^:") and name or (":" .. name)
             end
         end
     end

@@ -100,12 +100,21 @@ function M.buffer_source_set()
 end
 
 function M.application_id(root)
-    for _, file in ipairs(util.gradle_files(root)) do
-        local content = util.read_file(file)
-        local id = content:match('applicationId%s*=%s*"([^"]+)"')
-            or content:match('namespace%s*=%s*"([^"]+)"')
-        if id then
-            return id
+    local files = util.gradle_files(root)
+    -- Prefer applicationId (any module) over namespace: a library module's
+    -- namespace must not shadow the app module's applicationId.
+    local patterns = {
+        'applicationId%s*=%s*["\']([^"\']+)["\']',
+        'applicationId%s+["\']([^"\']+)["\']',
+        'namespace%s*=%s*["\']([^"\']+)["\']',
+        'namespace%s+["\']([^"\']+)["\']',
+    }
+    for _, pattern in ipairs(patterns) do
+        for _, file in ipairs(files) do
+            local id = util.read_file(file):match(pattern)
+            if id then
+                return id
+            end
         end
     end
     return nil

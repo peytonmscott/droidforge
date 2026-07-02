@@ -14,7 +14,8 @@ export class AdbService {
         this._adbPath = Bun.which('adb');
         const androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
         if (androidHome) {
-            this._emulatorPath = `${androidHome}/emulator/emulator`;
+            const binary = process.platform === 'win32' ? 'emulator.exe' : 'emulator';
+            this._emulatorPath = `${androidHome}/emulator/${binary}`;
         } else {
             this._emulatorPath = Bun.which('emulator');
         }
@@ -89,6 +90,27 @@ export class AdbService {
 
     async killEmulator(serial: string): Promise<void> {
         await this.runCommand(['-s', serial, 'emu', 'kill']);
+    }
+
+    /** Resolves the AVD name behind a running emulator serial (e.g. emulator-5554). */
+    async getEmulatorAvdName(serial: string): Promise<string | null> {
+        try {
+            const output = await this.runCommand(['-s', serial, 'emu', 'avd', 'name']);
+            const name = output.split('\n')[0]?.trim();
+            return name && name !== 'OK' ? name : null;
+        } catch {
+            return null;
+        }
+    }
+
+    async takeScreenshot(serial: string): Promise<AdbCommandResult & { devicePath: string }> {
+        const devicePath = `/sdcard/droidforge-${Date.now()}.png`;
+        const result = await this.runCommandWithResult(['-s', serial, 'shell', 'screencap', '-p', devicePath]);
+        return { ...result, devicePath };
+    }
+
+    async rebootDevice(serial: string): Promise<AdbCommandResult> {
+        return this.runCommandWithResult(['-s', serial, 'reboot']);
     }
 
     spawnLogcat(serial: string, args: string[] = []): Subprocess {

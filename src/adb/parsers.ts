@@ -20,7 +20,8 @@ export function parseDevicesOutput(output: string): AdbDevice[] {
                 if (part.startsWith('model:')) device.model = part.slice(6);
                 if (part.startsWith('product:')) device.product = part.slice(8);
                 if (part.startsWith('device:')) device.codename = part.slice(7);
-                if (part.startsWith('usb:') || part.includes(':')) device.transport = part;
+                if (part.startsWith('usb:')) device.transport = part;
+                if (part.startsWith('transport_id:') && !device.transport) device.transport = part;
             }
             
             return device;

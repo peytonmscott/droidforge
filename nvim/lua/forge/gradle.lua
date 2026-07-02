@@ -92,12 +92,20 @@ local function resolve_task(base, tasks)
             return normalized
         end
     end
+    -- Fall back to a module-qualified task (e.g. :composeApp:installDebug),
+    -- but require an exact task-name suffix so short bases like "test" or
+    -- "build" don't match unrelated tasks.
+    local suffix = ":" .. base
     for _, task in ipairs(tasks) do
-        if task.name:find(base, 1, true) then
+        if task.name == base or task.name:sub(-#suffix) == suffix then
             return task.name
         end
     end
     return nil
+end
+
+function M.resolve_task(base, tasks)
+    return resolve_task(base, tasks)
 end
 
 function M.curated_options(root, tasks)

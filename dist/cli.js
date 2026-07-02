@@ -7419,7 +7419,9 @@ function parseDevicesOutput(output2) {
         device.product = part.slice(8);
       if (part.startsWith("device:"))
         device.codename = part.slice(7);
-      if (part.startsWith("usb:") || part.includes(":"))
+      if (part.startsWith("usb:"))
+        device.transport = part;
+      if (part.startsWith("transport_id:") && !device.transport)
         device.transport = part;
     }
     return device;
@@ -7457,7 +7459,8 @@ class AdbService {
     this._adbPath = Bun.which("adb");
     const androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
     if (androidHome) {
-      this._emulatorPath = `${androidHome}/emulator/emulator`;
+      const binary = process.platform === "win32" ? "emulator.exe" : "emulator";
+      this._emulatorPath = `${androidHome}/emulator/${binary}`;
     } else {
       this._emulatorPath = Bun.which("emulator");
     }
@@ -7519,6 +7522,24 @@ class AdbService {
   async killEmulator(serial) {
     await this.runCommand(["-s", serial, "emu", "kill"]);
   }
+  async getEmulatorAvdName(serial) {
+    try {
+      const output2 = await this.runCommand(["-s", serial, "emu", "avd", "name"]);
+      const name = output2.split(`
+`)[0]?.trim();
+      return name && name !== "OK" ? name : null;
+    } catch {
+      return null;
+    }
+  }
+  async takeScreenshot(serial) {
+    const devicePath = `/sdcard/droidforge-${Date.now()}.png`;
+    const result = await this.runCommandWithResult(["-s", serial, "shell", "screencap", "-p", devicePath]);
+    return { ...result, devicePath };
+  }
+  async rebootDevice(serial) {
+    return this.runCommandWithResult(["-s", serial, "reboot"]);
+  }
   spawnLogcat(serial, args = []) {
     const cmd = [this._adbPath, "-s", serial, "logcat", ...args];
     return Bun.spawn(cmd, {
@@ -7576,12 +7597,18 @@ class EmulatorService {
     const names = parseAvdList(output2);
     const devices = await this._adb.listDevices();
     const runningEmulators = devices.filter((d) => d.type === "emulator");
+    const serialsByAvd = new Map;
+    await Promise.all(runningEmulators.map(async (emulator) => {
+      const avdName = await this._adb.getEmulatorAvdName(emulator.serial);
+      if (avdName)
+        serialsByAvd.set(avdName, emulator.serial);
+    }));
     return names.map((name) => {
-      const running = runningEmulators.find((e) => e.model?.includes(name) || e.serial.includes(name.toLowerCase().replace(/_/g, "")));
+      const serial = serialsByAvd.get(name);
       return {
         name,
-        isRunning: !!running,
-        serial: running?.serial
+        isRunning: serial !== undefined,
+        serial
       };
     });
   }
@@ -8686,22 +8713,33 @@ class LogcatViewModel {
   async startStream() {
     if (this._state === "running")
       return;
-    const { deviceId, packageName, logLevel = "V" } = this._config;
+    this._output = { lines: [], scrollOffset: 0, exitCode: null };
+    const { packageName, logLevel = "V" } = this._config;
+    let { deviceId } = this._config;
     if (!deviceId) {
-      this._state = "error";
-      this._onOutputUpdate?.();
-      return;
+      if (!this._adb.isAvailable()) {
+        this.failWithMessage("ADB not found. Install Android SDK platform-tools.");
+        return;
+      }
+      const devices = await this._adb.listDevices();
+      deviceId = devices.find((d) => d.status === "device")?.serial;
+      if (!deviceId) {
+        this.failWithMessage("No connected devices. Start an emulator or plug in a device.");
+        return;
+      }
+      this._config = { ...this._config, deviceId };
     }
     const args = ["-v", "threadtime"];
     if (packageName) {
       const pid = await this._adb.getPackagePid(deviceId, packageName);
       if (pid) {
         args.push("--pid", String(pid));
+      } else {
+        this.addLine(`--- ${packageName} is not running; showing full device logcat ---`);
       }
     }
     args.push(`*:${logLevel}`);
     this._state = "running";
-    this._output = { lines: [], scrollOffset: 0, exitCode: null };
     this._onOutputUpdate?.();
     this._currentProcess = this._adb.spawnLogcat(deviceId, args);
     this.streamOutput(this._currentProcess.stdout);
@@ -8727,7 +8765,13 @@ class LogcatViewModel {
       this._onOutputUpdate?.();
     }
   }
+  failWithMessage(message) {
+    this._state = "error";
+    this.addLine(`--- ${message} ---`);
+    this._onOutputUpdate?.();
+  }
   addLine(rawLine) {
+    const wasAtBottom = this._output.scrollOffset >= Math.max(0, this._output.lines.length - this._outputWindowSize);
     const parsed = parseLogcatLine(rawLine);
     this._output.lines.push(parsed);
     if (this._output.lines.length > this._maxLines) {
@@ -8735,7 +8779,9 @@ class LogcatViewModel {
       this._output.lines.splice(0, excess);
       this._output.scrollOffset = Math.max(0, this._output.scrollOffset - excess);
     }
-    this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+    if (wasAtBottom) {
+      this._output.scrollOffset = Math.max(0, this._output.lines.length - this._outputWindowSize);
+    }
   }
   pauseStream() {
     this._state = "paused";
@@ -8794,6 +8840,9 @@ var init_LogcatViewModel = __esm(() => {
 });
 
 // src/viewmodels/AdbActionsViewModel.ts
+import fs7 from "fs";
+import path8 from "path";
+
 class AdbActionsViewModel {
   _adb;
   _workspace;
@@ -8801,7 +8850,10 @@ class AdbActionsViewModel {
   _selectedDevice = null;
   _packages = [];
   _loading = false;
+  _busy = false;
   _error = null;
+  _message = null;
+  _pendingPackageAction = null;
   _onMenuUpdate = null;
   constructor(_adb, _workspace) {
     this._adb = _adb;
@@ -8862,10 +8914,24 @@ class AdbActionsViewModel {
     if (this._error) {
       return [{ name: `Error: ${this._error}`, description: "", value: "__error__", disabled: true }];
     }
-    const options = [];
     if (this._devices.length === 0) {
       return [{ name: "No devices connected", description: "", value: "__empty__", disabled: true }];
     }
+    if (this._pendingPackageAction) {
+      const label = PACKAGE_ACTION_LABELS[this._pendingPackageAction];
+      const options2 = [
+        { name: `\u2500\u2500 ${label} which package? \u2500\u2500`, description: "", value: "__header__", disabled: true }
+      ];
+      for (const pkg of this._packages) {
+        options2.push({ name: pkg, description: "", value: `pkg:${pkg}` });
+      }
+      if (this._packages.length === 0) {
+        options2.push({ name: "No third-party packages found", description: "", value: "__empty__", disabled: true });
+      }
+      options2.push({ name: "\u2190 Cancel", description: "Back to actions", value: "cancel-pick" });
+      return options2;
+    }
+    const options = [];
     if (this._devices.length > 1) {
       options.push({ name: "\u2500\u2500 Select Device \u2500\u2500", description: "", value: "__header__", disabled: true });
       for (const device of this._devices) {
@@ -8880,11 +8946,9 @@ class AdbActionsViewModel {
     }
     if (this._selectedDevice) {
       options.push({ name: "\u2500\u2500 App Actions \u2500\u2500", description: "", value: "__header__", disabled: true });
-      const projectPath = this._workspace.getCwd();
-      const hasApk = projectPath;
       options.push({
         name: "Install APK",
-        description: hasApk ? "Install from project build" : "Install APK file",
+        description: "Install the newest APK from the project build outputs",
         value: "install-apk"
       });
       options.push({
@@ -8905,7 +8969,7 @@ class AdbActionsViewModel {
       options.push({ name: "\u2500\u2500 Device Actions \u2500\u2500", description: "", value: "__header__", disabled: true });
       options.push({
         name: "Take Screenshot",
-        description: "Save screenshot to device",
+        description: "Save screenshot to device storage",
         value: "screenshot"
       });
       options.push({
@@ -8914,35 +8978,149 @@ class AdbActionsViewModel {
         value: "reboot"
       });
     }
+    if (this._busy) {
+      options.push({ name: "", description: "", value: "__spacer__", disabled: true });
+      options.push({ name: "\u23F3 Running\u2026", description: "", value: "__busy__", disabled: true });
+    } else if (this._message) {
+      options.push({ name: "", description: "", value: "__spacer__", disabled: true });
+      options.push({ name: this._message, description: "", value: "__message__", disabled: true });
+    }
     return options;
   }
   async handleMenuSelection(value) {
+    if (this._busy) {
+      return { action: "none" };
+    }
     if (value.startsWith("select-device:")) {
       const serial = value.slice("select-device:".length);
       await this.selectDevice(serial);
       return { action: "device-selected" };
+    }
+    if (value === "cancel-pick") {
+      this._pendingPackageAction = null;
+      this.notifyUpdate();
+      return { action: "none" };
+    }
+    if (value.startsWith("pkg:")) {
+      const pkg = value.slice("pkg:".length);
+      await this.runPackageAction(pkg);
+      return { action: "executed" };
     }
     if (!this._selectedDevice) {
       return { action: "no-device" };
     }
     switch (value) {
       case "install-apk":
-        return { action: "navigate", command: `adb-install:${this._selectedDevice}` };
+        await this.installProjectApk();
+        return { action: "executed" };
       case "uninstall-package":
-        return { action: "navigate", command: `adb-uninstall:${this._selectedDevice}` };
       case "clear-data":
-        return { action: "navigate", command: `adb-clear:${this._selectedDevice}` };
-      case "force-stop":
-        return { action: "navigate", command: `adb-forcestop:${this._selectedDevice}` };
-      case "screenshot":
-        return { action: "navigate", command: `adb-screenshot:${this._selectedDevice}` };
-      case "reboot":
-        return { action: "navigate", command: `adb-reboot:${this._selectedDevice}` };
+      case "force-stop": {
+        this._pendingPackageAction = value === "uninstall-package" ? "uninstall" : value;
+        this._message = null;
+        if (this._packages.length === 0) {
+          await this.loadPackages();
+        }
+        this.notifyUpdate();
+        return { action: "pick-package" };
+      }
+      case "screenshot": {
+        await this.run(async (serial) => {
+          const result = await this._adb.takeScreenshot(serial);
+          return result.success ? `\u2713 Screenshot saved to ${result.devicePath}` : `\u2717 Screenshot failed: ${result.stderr.trim() || result.stdout.trim()}`;
+        });
+        return { action: "executed" };
+      }
+      case "reboot": {
+        await this.run(async (serial) => {
+          const result = await this._adb.rebootDevice(serial);
+          return result.success ? "\u2713 Device is rebooting" : `\u2717 Reboot failed: ${result.stderr.trim() || result.stdout.trim()}`;
+        });
+        return { action: "executed" };
+      }
       default:
         return { action: "none" };
     }
   }
+  async run(task) {
+    const serial = this._selectedDevice;
+    if (!serial)
+      return;
+    this._busy = true;
+    this._message = null;
+    this.notifyUpdate();
+    try {
+      this._message = await task(serial);
+    } catch (err) {
+      this._message = `\u2717 ${err instanceof Error ? err.message : String(err)}`;
+    }
+    this._busy = false;
+    this.notifyUpdate();
+  }
+  async runPackageAction(pkg) {
+    const action = this._pendingPackageAction;
+    this._pendingPackageAction = null;
+    if (!action)
+      return;
+    await this.run(async (serial) => {
+      const result = action === "uninstall" ? await this._adb.uninstallPackage(serial, pkg) : action === "clear-data" ? await this._adb.clearAppData(serial, pkg) : await this._adb.forceStop(serial, pkg);
+      const verb = PACKAGE_ACTION_LABELS[action].toLowerCase();
+      if (!result.success) {
+        return `\u2717 Failed to ${verb} ${pkg}: ${result.stderr.trim() || result.stdout.trim()}`;
+      }
+      if (action === "uninstall") {
+        this._packages = this._packages.filter((p) => p !== pkg);
+      }
+      return `\u2713 ${PACKAGE_ACTION_LABELS[action]} ${pkg}: done`;
+    });
+  }
+  async installProjectApk() {
+    await this.run(async (serial) => {
+      const apk = this.findNewestApk(this._workspace.getCwd());
+      if (!apk) {
+        return "\u2717 No APK found under build/outputs \u2014 run a Gradle build first";
+      }
+      const result = await this._adb.installApk(serial, apk);
+      return result.success ? `\u2713 Installed ${path8.basename(apk)}` : `\u2717 Install failed: ${result.stderr.trim() || result.stdout.trim()}`;
+    });
+  }
+  findNewestApk(root) {
+    const results = [];
+    const visit = (dir, depth) => {
+      if (depth > 6)
+        return;
+      let entries;
+      try {
+        entries = fs7.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.name.startsWith(".") || entry.name === "node_modules")
+          continue;
+        const fullPath = path8.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          visit(fullPath, depth + 1);
+        } else if (entry.name.endsWith(".apk") && fullPath.includes(`${path8.sep}build${path8.sep}outputs${path8.sep}`)) {
+          try {
+            results.push({ file: fullPath, mtime: fs7.statSync(fullPath).mtimeMs });
+          } catch {}
+        }
+      }
+    };
+    visit(root, 0);
+    results.sort((a, b) => b.mtime - a.mtime);
+    return results[0]?.file ?? null;
+  }
 }
+var PACKAGE_ACTION_LABELS;
+var init_AdbActionsViewModel = __esm(() => {
+  PACKAGE_ACTION_LABELS = {
+    uninstall: "Uninstall",
+    "clear-data": "Clear data for",
+    "force-stop": "Force stop"
+  };
+});
 
 // src/viewmodels/index.ts
 var exports_viewmodels = {};
@@ -8963,6 +9141,7 @@ var init_viewmodels = __esm(() => {
   init_ActionsViewModel();
   init_GradleViewModel();
   init_LogcatViewModel();
+  init_AdbActionsViewModel();
 });
 
 // src/tooling/ToolingService.ts
@@ -9057,22 +9236,22 @@ var init_di = __esm(() => {
 // src/utilities/projectDetection.ts
 class ProjectDetection {
   findAndroidProjectRoot(startDir) {
-    const fs7 = __require("fs");
-    const path8 = __require("path");
-    let currentDir = path8.resolve(startDir || process.cwd());
+    const fs8 = __require("fs");
+    const path9 = __require("path");
+    let currentDir = path9.resolve(startDir || process.cwd());
     while (true) {
-      const hasSettings = fs7.existsSync(path8.join(currentDir, "settings.gradle")) || fs7.existsSync(path8.join(currentDir, "settings.gradle.kts"));
+      const hasSettings = fs8.existsSync(path9.join(currentDir, "settings.gradle")) || fs8.existsSync(path9.join(currentDir, "settings.gradle.kts"));
       if (hasSettings)
         return currentDir;
-      const parentDir = path8.dirname(currentDir);
+      const parentDir = path9.dirname(currentDir);
       if (parentDir === currentDir)
         return null;
       currentDir = parentDir;
     }
   }
   detectAndroidProject(dir) {
-    const fs7 = __require("fs");
-    const path8 = __require("path");
+    const fs8 = __require("fs");
+    const path9 = __require("path");
     const projectRoot = this.findAndroidProjectRoot(dir || process.cwd());
     if (!projectRoot) {
       return { isAndroidProject: false, confidence: "high", projectRoot: null };
@@ -9091,9 +9270,9 @@ class ProjectDetection {
     const versionCatalog = "gradle/libs.versions.toml";
     let foundAndroidPlugin = false;
     let projectType = "unknown";
-    const tomlPath = path8.join(projectRoot, versionCatalog);
-    if (fs7.existsSync(tomlPath)) {
-      const content = fs7.readFileSync(tomlPath, "utf8");
+    const tomlPath = path9.join(projectRoot, versionCatalog);
+    if (fs8.existsSync(tomlPath)) {
+      const content = fs8.readFileSync(tomlPath, "utf8");
       for (const plugin of androidPlugins) {
         if (content.includes(`id = "${plugin}"`)) {
           foundAndroidPlugin = true;
@@ -9104,10 +9283,10 @@ class ProjectDetection {
     }
     if (!foundAndroidPlugin) {
       for (const file of buildFiles) {
-        const filePath = path8.join(projectRoot, file);
-        if (!fs7.existsSync(filePath))
+        const filePath = path9.join(projectRoot, file);
+        if (!fs8.existsSync(filePath))
           continue;
-        const content = fs7.readFileSync(filePath, "utf8");
+        const content = fs8.readFileSync(filePath, "utf8");
         for (const plugin of androidPlugins) {
           if (content.includes(`'${plugin}'`) || content.includes(`"${plugin}"`) || content.includes(`id("${plugin}")`)) {
             foundAndroidPlugin = true;
@@ -9144,18 +9323,18 @@ class ProjectDetection {
 }
 
 // src/workspace/WorkspaceService.ts
-import path8 from "path";
+import path9 from "path";
 
 class WorkspaceService {
   _cwd;
   _detection;
   _detector = new ProjectDetection;
   constructor(cwd) {
-    this._cwd = path8.resolve(cwd);
+    this._cwd = path9.resolve(cwd);
     this._detection = this._detector.detectAndroidProject(this._cwd);
   }
   updateCwd(cwd) {
-    this._cwd = path8.resolve(cwd);
+    this._cwd = path9.resolve(cwd);
     this._detection = this._detector.detectAndroidProject(this._cwd);
   }
   getCwd() {
@@ -9178,7 +9357,7 @@ class WorkspaceService {
   }
 }
 function pathToFileUri(filePath) {
-  const normalized = path8.resolve(filePath).replace(/\\/g, "/");
+  const normalized = path9.resolve(filePath).replace(/\\/g, "/");
   const withLeading = normalized.startsWith("/") ? normalized : `/${normalized}`;
   return `file://${withLeading}`;
 }
@@ -9285,16 +9464,16 @@ class NavigationManager {
 }
 
 // src/utilities/androidProjectName.ts
-import fs7 from "fs";
-import path9 from "path";
+import fs8 from "fs";
+import path10 from "path";
 function getAndroidProjectName(projectRoot) {
   const settingsCandidates = ["settings.gradle.kts", "settings.gradle"];
   for (const settingsFile of settingsCandidates) {
-    const filePath = path9.join(projectRoot, settingsFile);
-    if (!fs7.existsSync(filePath))
+    const filePath = path10.join(projectRoot, settingsFile);
+    if (!fs8.existsSync(filePath))
       continue;
     try {
-      const content = fs7.readFileSync(filePath, "utf8");
+      const content = fs8.readFileSync(filePath, "utf8");
       const match = content.match(/rootProject\.name\s*=\s*['"]([^'"]+)['"]/);
       if (match?.[1]) {
         const name = match[1].trim();
@@ -9303,15 +9482,51 @@ function getAndroidProjectName(projectRoot) {
       }
     } catch {}
   }
-  return path9.basename(projectRoot);
+  return path10.basename(projectRoot);
+}
+function getAndroidApplicationId(projectRoot) {
+  const buildFiles = [];
+  const candidates = ["build.gradle.kts", "build.gradle"];
+  for (const candidate of candidates) {
+    const rootFile = path10.join(projectRoot, candidate);
+    if (fs8.existsSync(rootFile))
+      buildFiles.push(rootFile);
+  }
+  try {
+    for (const entry of fs8.readdirSync(projectRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith("."))
+        continue;
+      for (const candidate of candidates) {
+        const moduleFile = path10.join(projectRoot, entry.name, candidate);
+        if (fs8.existsSync(moduleFile))
+          buildFiles.push(moduleFile);
+      }
+    }
+  } catch {}
+  const patterns = [
+    /applicationId\s*=\s*['"]([^'"]+)['"]/,
+    /applicationId\s+['"]([^'"]+)['"]/,
+    /namespace\s*=\s*['"]([^'"]+)['"]/,
+    /namespace\s+['"]([^'"]+)['"]/
+  ];
+  for (const pattern of patterns) {
+    for (const file of buildFiles) {
+      try {
+        const match = fs8.readFileSync(file, "utf8").match(pattern);
+        if (match?.[1])
+          return match[1];
+      } catch {}
+    }
+  }
+  return null;
 }
 var init_androidProjectName = () => {};
 
 // src/utilities/projectMemory.ts
 import crypto from "crypto";
-import path10 from "path";
+import path11 from "path";
 function normalizeProjectPath(projectPath) {
-  return path10.resolve(projectPath);
+  return path11.resolve(projectPath);
 }
 function projectIdFromPath(projectPath) {
   const normalized = normalizeProjectPath(projectPath);
@@ -10094,6 +10309,18 @@ import { BoxRenderable as BoxRenderable12, Text as Text6, TextAttributes as Text
 function stripAnsi(text) {
   return text.replace(/\u001b\[[0-9;?]*[@-~]/g, "").replace(/\u001b\][^\u0007]*(\u0007|\u001b\\)/g, "");
 }
+function copyToClipboard(text) {
+  const candidates = process.platform === "darwin" ? [["pbcopy"]] : process.platform === "win32" ? [["clip"]] : [["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]];
+  for (const cmd of candidates) {
+    if (!Bun.which(cmd[0]))
+      continue;
+    try {
+      Bun.spawn(cmd, { stdin: new Response(text).body });
+      return true;
+    } catch {}
+  }
+  return false;
+}
 function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setStatusText, onBack) {
   const container = new BoxRenderable12(renderer, {
     id: "action-output-container",
@@ -10228,13 +10455,12 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setS
       case "c":
         if (viewModel.state === "completed" || viewModel.state === "error") {
           const text = stripAnsi(viewModel.getOutputText());
-          try {
-            Bun.spawn(["pbcopy"], {
-              stdin: new Response(text).body
-            });
+          if (copyToClipboard(text)) {
             setStatusText?.("\uD83D\uDCCB Copied to clipboard!");
-            setTimeout(updateOutput, 1500);
-          } catch {}
+          } else {
+            setStatusText?.("\u26A0 No clipboard tool found (pbcopy/wl-copy/xclip/xsel)");
+          }
+          setTimeout(updateOutput, 1500);
         }
         break;
       case "escape":
@@ -10259,6 +10485,7 @@ function ActionOutputView(renderer, viewModel, command, theme, ansiPalette, setS
     viewModel.setOutputUpdateCallback(() => {
       return;
     });
+    viewModel.cancelTask();
   };
   ensureLive();
   setStatusText?.(`\u23F3 starting \u2022 j/k: scroll \u2022 PgUp/PgDn: page \u2022 Home/End: top/bottom \u2022 r: rerun \u2022 c: copy \u2022 ESC: cancel`);
@@ -10524,6 +10751,7 @@ function LogcatView(renderer, viewModel, config, theme, setStatusText, onBack) {
   renderer.keyInput.on("keypress", keyHandler);
   container.__dispose = () => {
     dropLive();
+    renderer.keyInput.off("keypress", keyHandler);
     viewModel.stopStream();
     viewModel.setOutputUpdateCallback(() => {
       return;
@@ -10564,10 +10792,7 @@ function AdbActionsView(renderer, viewModel, theme, onNavigate) {
     itemSpacing: 1,
     onSelect: async (_index, option) => {
       const value = typeof option.value === "string" ? option.value : "";
-      const result = await viewModel.handleMenuSelection(value);
-      if (result.action === "navigate" && result.command && onNavigate) {
-        onNavigate(`adb-output:${result.command}`);
-      }
+      await viewModel.handleMenuSelection(value);
     }
   });
   wireCompactMenuLayout(selectContainer, selectMenu);
@@ -10723,20 +10948,14 @@ function renderView(currentView, ctx) {
     }
     case "adb": {
       const viewModel = ctx.diContainer.get("AdbActionsViewModel");
-      const view = AdbActionsView(ctx.renderer, viewModel, ctx.theme, (action) => {
-        if (action.startsWith("adb-output:")) {
-          ctx.onGoBackThenRender();
-        } else {
-          ctx.onNavigateThenRender(action);
-        }
-      });
+      const view = AdbActionsView(ctx.renderer, viewModel, ctx.theme);
       return { view, statusText };
     }
     case "app-logs": {
       const viewModel = ctx.diContainer.get("LogcatViewModel");
       const ws = ctx.diContainer.get("WorkspaceService");
-      const projectName = ws.getCwd().split("/").pop() ?? "app";
-      const view = LogcatView(ctx.renderer, viewModel, { packageName: projectName }, ctx.theme, ctx.setStatusText, () => ctx.onGoBackThenRender());
+      const applicationId = getAndroidApplicationId(ws.getCwd());
+      const view = LogcatView(ctx.renderer, viewModel, applicationId ? { packageName: applicationId } : {}, ctx.theme, ctx.setStatusText, () => ctx.onGoBackThenRender());
       return { view, statusText: "j/k: scroll \u2022 p: pause \u2022 c: clear \u2022 ESC: back" };
     }
     case "device-logs": {
@@ -10758,6 +10977,7 @@ function renderView(currentView, ctx) {
 var VIEW_LABELS;
 var init_ViewRouter = __esm(() => {
   init_view();
+  init_utilities();
   VIEW_LABELS = {
     menu: "Main",
     projects: "Projects",
@@ -10774,7 +10994,7 @@ var init_ViewRouter = __esm(() => {
 // src/index.ts
 var exports_src = {};
 import { createCliRenderer, Text as Text10, BoxRenderable as BoxRenderable18, TextAttributes as TextAttributes9 } from "@opentui/core";
-import path11 from "path";
+import path12 from "path";
 async function rememberCurrentAndroidProject() {
   const ws = diContainer.get("WorkspaceService");
   const detection = ws.getDetection();
@@ -10854,7 +11074,7 @@ var init_src = __esm(async () => {
   init_ViewRouter();
   targetDir = process.argv[2];
   if (targetDir) {
-    const resolvedPath = path11.resolve(targetDir);
+    const resolvedPath = path12.resolve(targetDir);
     try {
       process.chdir(resolvedPath);
     } catch {}
